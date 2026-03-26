@@ -453,21 +453,6 @@ export default function UserView({ onAddReport, userReports = [] }) {
           {darkMode ? '☀️ Light Mode' : '🌙 Dark Mode'}
         </button>
 
-        <div style={{ ...card({ padding: '14px' }) }}>
-          <div style={{ fontSize: '9px', fontFamily: "'JetBrains Mono', monospace", color: '#4a7aab', letterSpacing: '0.1em', marginBottom: '4px' }}>LIVE SENSOR</div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '30px', fontWeight: 700, color: luxC, lineHeight: 1, transition: 'color 0.4s' }}>
-            {lux.toFixed(1)}<span style={{ fontSize: '12px', color: '#4a7aab', fontWeight: 400 }}> lux</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px' }}>
-            <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: luxC, opacity: blink ? 1 : 0.2, transition: 'opacity 0.3s' }} />
-            <span style={{ fontSize: '10px', color: luxC, fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{luxLabel(lux)}</span>
-            {!sensorOk && <span style={{ fontSize: '9px', color: '#334155' }}>sim</span>}
-          </div>
-          <div style={{ height: '3px', background: 'rgba(30,58,95,0.3)', borderRadius: '2px', overflow: 'hidden', marginTop: '8px' }}>
-            <div style={{ height: '100%', width: `${Math.min(100, (lux / 40) * 100)}%`, background: luxC, transition: 'width 0.5s, background 0.4s', borderRadius: '2px' }} />
-          </div>
-        </div>
-
         {phase === 'results' && (
           <div style={{ ...card({ padding: '14px' }), animation: 'fadeUp 0.5s ease forwards', maxWidth: '220px' }}>
             <div style={{ fontSize: '10px', fontFamily: "'JetBrains Mono', monospace", color: '#4a7aab', letterSpacing: '0.1em', marginBottom: '10px' }}>SAFETY INDEX</div>
