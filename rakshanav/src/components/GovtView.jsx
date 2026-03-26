@@ -17,6 +17,7 @@ export default function GovtView({ userReports = [], onResolveReport }) {
   const [selectedReport, setSelectedReport] = useState(null)
   const [filterSeverity, setFilterSeverity] = useState('all')
   const [activeTab,      setActiveTab]      = useState('reports') // 'reports' | 'infrastructure'
+  const [darkMode,       setDarkMode]       = useState(true)
 
   const filteredStatic = filterSeverity === 'all'
     ? DARK_SPOTS
@@ -27,6 +28,19 @@ export default function GovtView({ userReports = [], onResolveReport }) {
     ? (userReports.reduce((s, r) => s + r.lux, 0) / userReports.length).toFixed(1)
     : '—'
   const criticalCount = userReports.filter(r => r.severity === 'critical').length
+  const panelBg = darkMode ? 'rgba(8,12,16,0.92)' : 'rgba(255,255,255,0.92)'
+  const panelBorder = darkMode ? 'rgba(30,58,95,0.4)' : 'rgba(148,163,184,0.4)'
+  const sidebarBg = darkMode ? 'rgba(10,14,20,0.98)' : 'rgba(248,250,252,0.98)'
+  const sidebarBorder = darkMode ? 'rgba(30,58,95,0.3)' : 'rgba(203,213,225,0.9)'
+  const cardBg = darkMode ? 'rgba(13,21,31,0.7)' : 'rgba(255,255,255,0.92)'
+  const softCardBg = darkMode ? 'rgba(13,21,31,0.6)' : 'rgba(241,245,249,0.98)'
+  const tabBg = darkMode ? 'rgba(13,21,31,0.5)' : 'rgba(226,232,240,0.9)'
+  const titleColor = darkMode ? '#fff' : '#0f172a'
+  const bodyText = darkMode ? '#64748b' : '#475569'
+  const mutedText = darkMode ? '#475569' : '#64748b'
+  const subtleText = darkMode ? '#334155' : '#94a3b8'
+  const activeTabBg = darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.95)'
+  const lightShadow = darkMode ? 'none' : '0 12px 30px rgba(15,23,42,0.08)'
 
   return (
     <div style={{ display: 'flex', height: '100%', fontFamily: "'Inter', sans-serif" }}>
@@ -36,7 +50,7 @@ export default function GovtView({ userReports = [], onResolveReport }) {
         <Map
           initialViewState={{ longitude: 77.6080, latitude: 12.9464, zoom: 11.5 }}
           style={{ width: '100%', height: '100%' }}
-          mapStyle="https://tiles.openfreemap.org/styles/dark"
+          mapStyle={darkMode ? 'https://tiles.openfreemap.org/styles/dark' : 'https://tiles.openfreemap.org/styles/positron'}
           attributionControl={false}
         >
           {/* Static infrastructure deficit zones */}
@@ -91,8 +105,9 @@ export default function GovtView({ userReports = [], onResolveReport }) {
         {/* Filter bar */}
         <div style={{
           position: 'absolute', top: '70px', left: '1rem', zIndex: 10,
-          background: 'rgba(8,12,16,0.92)', backdropFilter: 'blur(12px)',
-          border: '1px solid rgba(30,58,95,0.45)', borderRadius: '12px', padding: '10px 14px',
+          background: panelBg, backdropFilter: 'blur(12px)',
+          border: `1px solid ${panelBorder}`, borderRadius: '12px', padding: '10px 14px',
+          boxShadow: lightShadow,
         }}>
           <div style={{ fontSize: '10px', fontFamily: "'JetBrains Mono', monospace", color: '#4a7aab', letterSpacing: '0.08em', marginBottom: '8px' }}>FILTER DEFICIT ZONES</div>
           <div style={{ display: 'flex', gap: '6px' }}>
@@ -102,9 +117,9 @@ export default function GovtView({ userReports = [], onResolveReport }) {
               return (
                 <button key={s} onClick={() => setFilterSeverity(s)} style={{
                   padding: '5px 12px', borderRadius: '7px', cursor: 'pointer',
-                  border: `1px solid ${active ? col + '66' : 'rgba(30,58,95,0.3)'}`,
+                  border: `1px solid ${active ? col + '66' : (darkMode ? 'rgba(30,58,95,0.3)' : 'rgba(148,163,184,0.55)')}`,
                   background: active ? col + '20' : 'transparent',
-                  color: active ? col : '#475569',
+                  color: active ? col : mutedText,
                   fontSize: '11px', fontFamily: 'Syne, sans-serif', fontWeight: 600,
                   textTransform: 'uppercase', letterSpacing: '0.05em', transition: 'all 0.15s',
                 }}>{s}</button>
@@ -116,8 +131,9 @@ export default function GovtView({ userReports = [], onResolveReport }) {
         {/* Legend */}
         <div style={{
           position: 'absolute', bottom: '1.5rem', left: '1rem', zIndex: 10,
-          background: 'rgba(8,12,16,0.92)', backdropFilter: 'blur(12px)',
-          border: '1px solid rgba(30,58,95,0.4)', borderRadius: '11px', padding: '12px 14px',
+          background: panelBg, backdropFilter: 'blur(12px)',
+          border: `1px solid ${panelBorder}`, borderRadius: '11px', padding: '12px 14px',
+          boxShadow: lightShadow,
         }}>
           <div style={{ fontSize: '10px', fontFamily: "'JetBrains Mono', monospace", color: '#4a7aab', marginBottom: '8px', letterSpacing: '0.08em' }}>MAP LEGEND</div>
           {[
@@ -127,13 +143,13 @@ export default function GovtView({ userReports = [], onResolveReport }) {
           ].map(({ label, color, size }) => (
             <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
               <div style={{ width: size*2, height: size*2, borderRadius: '50%', background: color, boxShadow: `0 0 6px ${color}88`, flexShrink: 0 }} />
-              <span style={{ fontSize: '11px', color: '#64748b' }}>{label}</span>
+              <span style={{ fontSize: '11px', color: bodyText }}>{label}</span>
             </div>
           ))}
-          <div style={{ height: '1px', background: 'rgba(30,58,95,0.3)', margin: '8px 0' }} />
+          <div style={{ height: '1px', background: darkMode ? 'rgba(30,58,95,0.3)' : 'rgba(148,163,184,0.35)', margin: '8px 0' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#ef4444', border: '2px solid #fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', color: '#fff', fontWeight: 700 }}>!</div>
-            <span style={{ fontSize: '11px', color: '#64748b' }}>Live citizen report</span>
+            <span style={{ fontSize: '11px', color: bodyText }}>Live citizen report</span>
           </div>
         </div>
 
@@ -141,17 +157,18 @@ export default function GovtView({ userReports = [], onResolveReport }) {
         {selectedSpot && (
           <div style={{
             position: 'absolute', top: '70px', right: '10px', zIndex: 20,
-            background: 'rgba(8,12,16,0.96)', border: `1px solid ${severityColor[selectedSpot.severity]}44`,
+            background: darkMode ? 'rgba(8,12,16,0.96)' : 'rgba(255,255,255,0.97)', border: `1px solid ${severityColor[selectedSpot.severity]}44`,
             borderRadius: '14px', padding: '1.25rem', minWidth: '240px',
+            boxShadow: lightShadow,
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '14px', color: '#fff' }}>{selectedSpot.area}</div>
-              <button onClick={() => setSelectedSpot(null)} style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: '18px' }}>×</button>
+              <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '14px', color: titleColor }}>{selectedSpot.area}</div>
+              <button onClick={() => setSelectedSpot(null)} style={{ background: 'none', border: 'none', color: mutedText, cursor: 'pointer', fontSize: '18px' }}>×</button>
             </div>
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '36px', fontWeight: 700, color: severityColor[selectedSpot.severity], lineHeight: 1, marginBottom: '8px' }}>
               {selectedSpot.lux} <span style={{ fontSize: '14px', color: '#4a7aab' }}>lux</span>
             </div>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px' }}>Complaints: <span style={{ color: '#fff', fontWeight: 600 }}>{selectedSpot.complaints}</span></div>
+            <div style={{ fontSize: '12px', color: bodyText, marginBottom: '10px' }}>Complaints: <span style={{ color: titleColor, fontWeight: 600 }}>{selectedSpot.complaints}</span></div>
             <button style={{ width: '100%', padding: '9px', background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '9px', color: '#60a5fa', fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>
               RAISE WORK ORDER ↗
             </button>
@@ -162,22 +179,22 @@ export default function GovtView({ userReports = [], onResolveReport }) {
         {selectedReport && (
           <div style={{
             position: 'absolute', top: '70px', right: '10px', zIndex: 20,
-            background: 'rgba(8,12,16,0.96)', border: `1px solid ${severityColor[selectedReport.severity]}55`,
+            background: darkMode ? 'rgba(8,12,16,0.96)' : 'rgba(255,255,255,0.97)', border: `1px solid ${severityColor[selectedReport.severity]}55`,
             borderRadius: '14px', padding: '1.25rem', minWidth: '260px',
-            boxShadow: `0 0 30px ${severityColor[selectedReport.severity]}22`,
+            boxShadow: darkMode ? `0 0 30px ${severityColor[selectedReport.severity]}22` : lightShadow,
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
               <div>
                 <div style={{ fontSize: '10px', fontFamily: "'JetBrains Mono', monospace", color: severityColor[selectedReport.severity], letterSpacing: '0.08em', marginBottom: '3px' }}>CITIZEN REPORT</div>
-                <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '15px', color: '#fff' }}>{selectedReport.type}</div>
+                <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '15px', color: titleColor }}>{selectedReport.type}</div>
               </div>
-              <button onClick={() => setSelectedReport(null)} style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: '18px' }}>×</button>
+              <button onClick={() => setSelectedReport(null)} style={{ background: 'none', border: 'none', color: mutedText, cursor: 'pointer', fontSize: '18px' }}>×</button>
             </div>
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '36px', fontWeight: 700, color: severityColor[selectedReport.severity], lineHeight: 1, marginBottom: '4px' }}>
               {selectedReport.lux} <span style={{ fontSize: '14px', color: '#4a7aab' }}>lux</span>
             </div>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>{selectedReport.description}</div>
-            <div style={{ fontSize: '11px', color: '#334155', marginBottom: '12px', fontFamily: "'JetBrains Mono', monospace" }}>{selectedReport.timestamp}</div>
+            <div style={{ fontSize: '12px', color: bodyText, marginBottom: '6px' }}>{selectedReport.description}</div>
+            <div style={{ fontSize: '11px', color: subtleText, marginBottom: '12px', fontFamily: "'JetBrains Mono', monospace" }}>{selectedReport.timestamp}</div>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button style={{ flex: 1, padding: '9px', background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '9px', color: '#60a5fa', fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>
                 RAISE WORK ORDER
@@ -193,16 +210,38 @@ export default function GovtView({ userReports = [], onResolveReport }) {
       {/* ── RIGHT SIDEBAR ────────────────────────────────────────────────── */}
       <div style={{
         width: '380px', flexShrink: 0,
-        background: 'rgba(10,14,20,0.98)',
-        borderLeft: '1px solid rgba(30,58,95,0.3)',
+        background: sidebarBg,
+        borderLeft: `1px solid ${sidebarBorder}`,
         display: 'flex', flexDirection: 'column',
         overflowY: 'auto',
       }}>
         {/* Header */}
-        <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid rgba(30,58,95,0.3)' }}>
-          <div style={{ fontSize: '10px', fontFamily: "'JetBrains Mono', monospace", color: '#fb923c', letterSpacing: '0.08em', marginBottom: '4px' }}>BRUHAT BENGALURU MAHANAGARA PALIKE</div>
-          <div style={{ fontFamily: 'Syne, sans-serif', fontSize: '17px', fontWeight: 800, color: '#fff', marginBottom: '2px' }}>City Safety Deficit Dashboard</div>
-          <div style={{ fontSize: '12px', color: '#475569' }}>Real-time infrastructure intelligence</div>
+        <div style={{ padding: '20px 20px 16px', borderBottom: `1px solid ${sidebarBorder}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+            <div>
+              <div style={{ fontSize: '10px', fontFamily: "'JetBrains Mono', monospace", color: '#fb923c', letterSpacing: '0.08em', marginBottom: '4px' }}>BRUHAT BENGALURU MAHANAGARA PALIKE</div>
+              <div style={{ fontFamily: 'Syne, sans-serif', fontSize: '17px', fontWeight: 800, color: titleColor, marginBottom: '2px' }}>City Safety Deficit Dashboard</div>
+              <div style={{ fontSize: '12px', color: mutedText }}>Real-time infrastructure intelligence</div>
+            </div>
+            <button
+              onClick={() => setDarkMode((d) => !d)}
+              style={{
+                padding: '8px 12px',
+                borderRadius: '9px',
+                border: `1px solid ${darkMode ? 'rgba(59,130,246,0.28)' : 'rgba(37,99,235,0.22)'}`,
+                background: darkMode ? 'rgba(59,130,246,0.10)' : 'rgba(255,255,255,0.9)',
+                color: darkMode ? '#93c5fd' : '#1d4ed8',
+                cursor: 'pointer',
+                fontFamily: 'Syne, sans-serif',
+                fontWeight: 700,
+                fontSize: '11px',
+                whiteSpace: 'nowrap',
+                boxShadow: darkMode ? 'none' : '0 6px 18px rgba(37,99,235,0.08)',
+              }}
+            >
+              {darkMode ? 'Light Mode' : 'Dark Mode'}
+            </button>
+          </div>
         </div>
 
         <div style={{ padding: '16px 20px', flex: 1 }}>
@@ -217,37 +256,38 @@ export default function GovtView({ userReports = [], onResolveReport }) {
               { label: 'Response Avg',    value: `${CITY_STATS.avgResponseDays}d`,color: '#eab308' },
               { label: 'Light Deficit',   value: `${CITY_STATS.streetlightDeficit}%`, color: '#f97316' },
             ].map(({ label, value, color }) => (
-              <div key={label} style={{ background: 'rgba(13,21,31,0.7)', border: '1px solid rgba(30,58,95,0.28)', borderRadius: '10px', padding: '10px 10px' }}>
-                <div style={{ fontSize: '9px', color: '#334155', fontFamily: "'JetBrains Mono', monospace", textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>{label}</div>
+              <div key={label} style={{ background: cardBg, border: `1px solid ${darkMode ? 'rgba(30,58,95,0.28)' : 'rgba(203,213,225,0.9)'}`, borderRadius: '10px', padding: '10px 10px', boxShadow: lightShadow }}>
+                <div style={{ fontSize: '9px', color: subtleText, fontFamily: "'JetBrains Mono', monospace", textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>{label}</div>
                 <div style={{ fontSize: '20px', fontFamily: 'Syne, sans-serif', fontWeight: 800, color, lineHeight: 1 }}>{value}</div>
               </div>
             ))}
           </div>
 
           {/* Deficit bar */}
-          <div style={{ background: 'rgba(13,21,31,0.6)', border: '1px solid rgba(30,58,95,0.28)', borderRadius: '12px', padding: '14px', marginBottom: '16px' }}>
+          <div style={{ background: softCardBg, border: `1px solid ${darkMode ? 'rgba(30,58,95,0.28)' : 'rgba(203,213,225,0.9)'}`, borderRadius: '12px', padding: '14px', marginBottom: '16px', boxShadow: lightShadow }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
               <div style={{ fontSize: '10px', fontFamily: "'JetBrains Mono', monospace", color: '#4a7aab', letterSpacing: '0.08em' }}>INFRASTRUCTURE DEFICIT</div>
               <div style={{ fontSize: '16px', fontWeight: 800, color: '#f97316', fontFamily: 'Syne, sans-serif' }}>{CITY_STATS.streetlightDeficit}%</div>
             </div>
-            <div style={{ height: '7px', background: 'rgba(30,58,95,0.3)', borderRadius: '4px', overflow: 'hidden', marginBottom: '5px' }}>
+            <div style={{ height: '7px', background: darkMode ? 'rgba(30,58,95,0.3)' : 'rgba(191,219,254,0.65)', borderRadius: '4px', overflow: 'hidden', marginBottom: '5px' }}>
               <div style={{ height: '100%', width: `${CITY_STATS.streetlightDeficit}%`, background: 'linear-gradient(90deg, #f97316, #ef4444)', borderRadius: '4px' }} />
             </div>
-            <div style={{ fontSize: '11px', color: '#334155' }}>Only 38% of streetlights operational in flagged wards</div>
+            <div style={{ fontSize: '11px', color: subtleText }}>Only 38% of streetlights operational in flagged wards</div>
           </div>
 
           {/* Tab switcher */}
-          <div style={{ display: 'flex', background: 'rgba(13,21,31,0.5)', borderRadius: '10px', padding: '3px', gap: '3px', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', background: tabBg, borderRadius: '10px', padding: '3px', gap: '3px', marginBottom: '14px' }}>
             {[
               { key: 'reports',        label: `Live Reports (${userReports.length})` },
               { key: 'infrastructure', label: 'Ward Alerts' },
             ].map(({ key, label }) => (
               <button key={key} onClick={() => setActiveTab(key)} style={{
                 flex: 1, padding: '7px', borderRadius: '8px', border: 'none', cursor: 'pointer',
-                background: activeTab === key ? 'rgba(255,255,255,0.08)' : 'transparent',
-                color: activeTab === key ? '#fff' : '#475569',
+                background: activeTab === key ? activeTabBg : 'transparent',
+                color: activeTab === key ? titleColor : mutedText,
                 fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: '11px',
                 transition: 'all 0.15s',
+                boxShadow: !darkMode && activeTab === key ? '0 6px 16px rgba(15,23,42,0.06)' : 'none',
               }}>{label}</button>
             ))}
           </div>
@@ -256,15 +296,16 @@ export default function GovtView({ userReports = [], onResolveReport }) {
           {activeTab === 'reports' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {userReports.length === 0 ? (
-                <div style={{ padding: '20px', textAlign: 'center', color: '#334155', fontSize: '13px', border: '1px dashed rgba(30,58,95,0.3)', borderRadius: '12px' }}>
+                <div style={{ padding: '20px', textAlign: 'center', color: subtleText, fontSize: '13px', border: `1px dashed ${darkMode ? 'rgba(30,58,95,0.3)' : 'rgba(148,163,184,0.55)'}`, borderRadius: '12px' }}>
                   No reports yet. Switch to User Mobility view and tap the <span style={{ color: '#ef4444' }}>⚠ Report Issue</span> button to add one.
                 </div>
               ) : userReports.map(r => (
                 <div key={r.id} style={{
-                  background: `${severityColor[r.severity]}08`,
-                  border: `1px solid ${severityColor[r.severity]}28`,
+                  background: darkMode ? `${severityColor[r.severity]}08` : '#ffffff',
+                  border: `1px solid ${darkMode ? `${severityColor[r.severity]}28` : 'rgba(226,232,240,0.95)'}`,
                   borderRadius: '12px', padding: '12px 14px',
                   animation: r.timestamp === 'Just now' ? 'fadeUp 0.4s ease' : 'none',
+                  boxShadow: lightShadow,
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '5px' }}>
                     <div>
@@ -272,9 +313,9 @@ export default function GovtView({ userReports = [], onResolveReport }) {
                         {r.timestamp === 'Just now' && (
                           <span style={{ background: '#ef4444', color: '#fff', borderRadius: '4px', padding: '1px 5px', fontSize: '9px', fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>NEW</span>
                         )}
-                        <span style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '13px', color: '#e2e8f0' }}>{r.type}</span>
+                        <span style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '13px', color: titleColor }}>{r.type}</span>
                       </div>
-                      <div style={{ fontSize: '11px', color: '#475569' }}>{r.description}</div>
+                      <div style={{ fontSize: '11px', color: bodyText }}>{r.description}</div>
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '10px' }}>
                       <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '20px', fontWeight: 700, color: severityColor[r.severity], lineHeight: 1 }}>{r.lux}</div>
@@ -282,7 +323,7 @@ export default function GovtView({ userReports = [], onResolveReport }) {
                     </div>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
-                    <span style={{ fontSize: '10px', color: '#334155', fontFamily: "'JetBrains Mono', monospace" }}>{r.timestamp}</span>
+                    <span style={{ fontSize: '10px', color: subtleText, fontFamily: "'JetBrains Mono', monospace" }}>{r.timestamp}</span>
                     <button onClick={() => onResolveReport(r.id)} style={{
                       padding: '4px 10px', borderRadius: '7px', cursor: 'pointer',
                       background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)',
@@ -300,18 +341,19 @@ export default function GovtView({ userReports = [], onResolveReport }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {WARD_ALERTS.map((ward) => (
                 <div key={ward.ward} style={{
-                  background: `${severityColor[ward.status]}08`,
-                  border: `1px solid ${severityColor[ward.status]}25`,
+                  background: darkMode ? `${severityColor[ward.status]}08` : '#ffffff',
+                  border: `1px solid ${darkMode ? `${severityColor[ward.status]}25` : 'rgba(226,232,240,0.95)'}`,
                   borderRadius: '11px', padding: '12px 14px',
+                  boxShadow: lightShadow,
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
-                    <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '13px', color: '#e2e8f0' }}>{ward.ward}</div>
+                    <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '13px', color: titleColor }}>{ward.ward}</div>
                     <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '18px', fontWeight: 700, color: severityColor[ward.status], lineHeight: 1 }}>
                       {ward.lux}<span style={{ fontSize: '10px', color: '#4a7aab', fontWeight: 400 }}>lx</span>
                     </div>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontSize: '12px', color: '#64748b' }}>
+                    <div style={{ fontSize: '12px', color: bodyText }}>
                       <span style={{ color: '#ef4444', fontWeight: 600 }}>{ward.lights} streetlights</span> need maintenance
                     </div>
                     <div style={{ fontSize: '11px', fontFamily: "'JetBrains Mono', monospace", color: '#ef4444', fontWeight: 700 }}>{ward.change}% this week</div>

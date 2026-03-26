@@ -1,9 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import Map, { Source, Layer, Marker, useMap } from 'react-map-gl/maplibre'
-import {
-  HERO_SCENARIOS, matchHeroScenario, generateSafetyData,
-  geocode, getRoutes
-} from '../data/bangaloreData'
+import { generateSafetyData, geocode, getRoutes } from '../data/bangaloreData'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const luxColor = (l) => l < 5 ? '#ef4444' : l < 15 ? '#f97316' : '#22c55e'
@@ -41,12 +38,6 @@ const getBounds = (a, b) => {
 const midOf = (coords) => coords[Math.floor(coords.length / 2)]
 
 const REPORT_TYPES = ['Bad Lighting', 'Broken Infrastructure', 'Suspicious Activity', 'Harassment']
-const QUICK_PICKS  = [
-  'Silk Board Junction', 'Koramangala 5th Block',
-  'MG Road Metro', 'Indiranagar 100ft Rd',
-  'Majestic Bus Stand', 'Jayanagar 4th Block',
-  'HSR Layout', 'Whitefield', 'Electronic City', 'Hebbal',
-]
 
 // ─── MapFitter ────────────────────────────────────────────────────────────────
 function MapFitter({ bounds }) {
@@ -65,8 +56,6 @@ export default function UserView({ onAddReport, userReports = [] }) {
   const [phase,        setPhase]        = useState('idle')
   const [fromVal,      setFromVal]      = useState('Silk Board Junction')
   const [toVal,        setToVal]        = useState('Koramangala 5th Block')
-  const [fromFocus,    setFromFocus]    = useState(false)
-  const [toFocus,      setToFocus]      = useState(false)
   const [statusMsg,    setStatusMsg]    = useState('')
   const [errorMsg,     setErrorMsg]     = useState('')
   const [activeRoute,  setActiveRoute]  = useState('both')
@@ -121,30 +110,6 @@ export default function UserView({ onAddReport, userReports = [] }) {
     if (!fromVal.trim() || !toVal.trim()) return
     setPhase('searching'); setErrorMsg(''); setActiveRoute('both')
 
-    const hero = matchHeroScenario(fromVal, toVal)
-    if (hero) {
-      setStatusMsg('Loading scenario...')
-      await new Promise(r => setTimeout(r, 1200))
-      setRouteData({
-        dangerous: {
-          ...hero.dangerous,
-          geoJSON:  toGeoJSON(hero.dangerous.coordinates),
-          heatJSON: toHeatGeoJSON(hero.dangerous.heatPoints || hero.dangerous.coordinates),
-          mid:      hero.dangerous.midpoint,
-        },
-        safe: {
-          ...hero.safe,
-          geoJSON: toGeoJSON(hero.safe.coordinates),
-          mid:     hero.safe.midpoint,
-        },
-        bounds: hero.bounds,
-        start: hero.start, end: hero.end,
-        startLabel: hero.startLabel, endLabel: hero.endLabel,
-        isHero: true,
-      })
-      setPhase('results'); return
-    }
-
     try {
       setStatusMsg('📍 Locating start point...')
       const startCoord = await geocode(fromVal)
@@ -152,30 +117,77 @@ export default function UserView({ onAddReport, userReports = [] }) {
       const endCoord = await geocode(toVal)
       setStatusMsg('🗺 Fetching real routes...')
       const routes = await getRoutes(startCoord, endCoord)
-      const dangerCoords = routes[0].geometry.coordinates
-      const safeCoords   = routes[1].geometry.coordinates
+      const routeComplexity = (route) => {
+        const coords = route?.geometry?.coordinates || []
+        if (coords.length < 3) return 0
+        let turnSum = 0
+        for (let i = 1; i < coords.length - 1; i += 1) {
+          const p0 = coords[i - 1]
+          const p1 = coords[i]
+          const p2 = coords[i + 1]
+          const v1x = p1[0] - p0[0]
+          const v1y = p1[1] - p0[1]
+          const v2x = p2[0] - p1[0]
+          const v2y = p2[1] - p1[1]
+          const m1 = Math.hypot(v1x, v1y) || 1
+          const m2 = Math.hypot(v2x, v2y) || 1
+          const dot = Math.max(-1, Math.min(1, ((v1x * v2x) + (v1y * v2y)) / (m1 * m2)))
+          turnSum += Math.acos(dot)
+        }
+        const km = Math.max(0.5, (route.distance || 0) / 1000)
+        return turnSum / km
+      }
+      const routeQuality = (route) => {
+        const mins = (route.duration || 0) / 60
+        const km = (route.distance || 0) / 1000
+        const complexity = routeComplexity(route)
+        // Lower score = better commuter route quality.
+        return (mins * 1.1) + (km * 2.2) + (complexity * 0.6)
+      }
+
+      const primaryRoute = routes[0]
+      const secondaryRoute = routes[1] || null
+      const hasTwoRoutes = Boolean(secondaryRoute)
+      const safeRoute = hasTwoRoutes && routeQuality(secondaryRoute) < routeQuality(primaryRoute)
+        ? secondaryRoute
+        : primaryRoute
+      const dangerRoute = hasTwoRoutes
+        ? (safeRoute === primaryRoute ? secondaryRoute : primaryRoute)
+        : null
+
+      const safeCoords = safeRoute.geometry.coordinates
+      const dangerCoords = dangerRoute?.geometry.coordinates || safeCoords
       setStatusMsg('🛡 Calculating safety scores...')
       await new Promise(r => setTimeout(r, 600))
-      const dangerData = generateSafetyData(true,  routes[0].distance, routes[0].duration)
-      const safeData   = generateSafetyData(false, routes[1].distance, routes[1].duration)
+      const safeData = generateSafetyData(false, safeRoute.distance, safeRoute.duration)
+      const dangerData = dangerRoute ? generateSafetyData(true, dangerRoute.distance, dangerRoute.duration) : null
       const fromShort  = fromVal.split(',')[0].trim()
       const toShort    = toVal.split(',')[0].trim()
       setRouteData({
-        dangerous: { name: `Direct: ${fromShort} → ${toShort}`, ...dangerData, geoJSON: toGeoJSON(dangerCoords), heatJSON: toHeatGeoJSON(dangerCoords), mid: midOf(dangerCoords) },
+        dangerous: dangerRoute ? { name: `Alternate: ${fromShort} → ${toShort}`, ...dangerData, geoJSON: toGeoJSON(dangerCoords), heatJSON: toHeatGeoJSON(dangerCoords), mid: midOf(dangerCoords) } : null,
         safe:      { name: `Safe: ${fromShort} → ${toShort}`,   ...safeData,   geoJSON: toGeoJSON(safeCoords),  mid: midOf(safeCoords)  },
         bounds: getBounds(dangerCoords, safeCoords),
         start: startCoord, end: endCoord,
         startLabel: startCoord.label, endLabel: endCoord.label,
+        hasSingleRoute: !dangerRoute,
         isHero: false,
       })
       setPhase('results')
     } catch (err) {
       setErrorMsg(err.message.includes('not found')
         ? `⚠ ${err.message}. Try "Whitefield" or "HSR Layout".`
-        : `⚠ Routing failed. Use a Quick Demo Scenario for the pitch.`)
+        : `⚠ Routing failed. Please try nearby landmark names.`)
       setPhase('error')
     }
   }, [fromVal, toVal])
+
+  const handleClearResults = useCallback(() => {
+    setPhase('idle')
+    setRouteData(null)
+    setActiveRoute('both')
+    setStatusMsg('')
+    setErrorMsg('')
+  }, [])
 
   // ── Report mode — map click handler ─────────────────────────────────────
   const handleMapClick = useCallback((e) => {
@@ -212,8 +224,9 @@ export default function UserView({ onAddReport, userReports = [] }) {
 
   const dp    = routeData?.dangerous
   const sp    = routeData?.safe
-  const showD = activeRoute !== 'safe'
-  const showS = activeRoute !== 'dangerous'
+  const hasBothRoutes = Boolean(dp && sp)
+  const showD = hasBothRoutes && activeRoute !== 'safe'
+  const showS = hasBothRoutes ? activeRoute !== 'dangerous' : Boolean(sp)
   const card  = darkMode ? glass : glassLight
   const txt   = (a, b) => darkMode ? a : b
   const sub   = darkMode ? '#64748b' : '#6b7280'
@@ -268,12 +281,12 @@ export default function UserView({ onAddReport, userReports = [] }) {
         {/* Route floating labels */}
         {phase === 'results' && showD && dp?.mid && (
           <Marker longitude={dp.mid[0]} latitude={dp.mid[1]}>
-            <div style={floatLabel('#ef4444')}>⚠ DANGER ZONE — AVOID</div>
+            <div style={floatLabel('#ef4444')}>⚠ DANGER ZONE — AVOID • {dp.eta}</div>
           </Marker>
         )}
         {phase === 'results' && showS && sp?.mid && (
           <Marker longitude={sp.mid[0]} latitude={sp.mid[1]}>
-            <div style={floatLabel('#22c55e')}>✦ GREEN CORRIDOR — RECOMMENDED</div>
+            <div style={floatLabel('#22c55e')}>✦ GREEN CORRIDOR — RECOMMENDED • {sp.eta}</div>
           </Marker>
         )}
 
@@ -327,10 +340,23 @@ export default function UserView({ onAddReport, userReports = [] }) {
           {/* Logo row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
             <div style={{
-              width: '32px', height: '32px', borderRadius: '8px',
-              background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px',
-            }}>🛡</div>
+              width: '40px',
+              height: '40px',
+              borderRadius: '10px',
+              background: darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.72)',
+              border: darkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(15,23,42,0.08)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
+              flexShrink: 0,
+            }}>
+              <img
+                src="/rakshanav-logo.png"
+                alt="RakshaNav logo"
+                style={{ width: '34px', height: '34px', objectFit: 'contain' }}
+              />
+            </div>
             <div>
               <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: '16px', color: txt('#fff', '#111'), letterSpacing: '-0.01em' }}>RakshaNav</div>
               <div style={{ fontSize: '10px', color: '#4a7aab', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.08em' }}>SAFE URBAN NAVIGATION</div>
@@ -347,23 +373,8 @@ export default function UserView({ onAddReport, userReports = [] }) {
 
           {/* Inputs */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
-            <InputField value={fromVal} onChange={setFromVal} placeholder="Start location..." dot="#3b82f6" dark={darkMode} focused={fromFocus} onFocus={() => setFromFocus(true)} onBlur={() => setTimeout(() => setFromFocus(false), 150)} suggestions={fromFocus ? QUICK_PICKS.slice(0, 5) : []} onSuggest={(v) => { setFromVal(v); setFromFocus(false) }} />
-            <InputField value={toVal}   onChange={setToVal}   placeholder="Destination..."    dot="#22c55e" dark={darkMode} focused={toFocus}   onFocus={() => setToFocus(true)}   onBlur={() => setTimeout(() => setToFocus(false), 150)}   suggestions={toFocus   ? QUICK_PICKS.slice(5, 10) : []} onSuggest={(v) => { setToVal(v);   setToFocus(false)   }} />
-          </div>
-
-          {/* Hero chips */}
-          <div style={{ marginBottom: '12px' }}>
-            <div style={{ fontSize: '10px', fontFamily: "'JetBrains Mono', monospace", color: '#4a7aab', letterSpacing: '0.08em', marginBottom: '6px' }}>QUICK DEMO SCENARIOS</div>
-            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-              {HERO_SCENARIOS.map(s => (
-                <button key={s.id} onClick={() => { setFromVal(s.startLabel); setToVal(s.endLabel) }} style={{
-                  padding: '4px 10px', borderRadius: '20px', cursor: 'pointer',
-                  background: darkMode ? 'rgba(59,130,246,0.1)' : 'rgba(59,130,246,0.08)',
-                  border: '1px solid rgba(59,130,246,0.25)', color: '#60a5fa',
-                  fontSize: '11px', fontWeight: 500, transition: 'all 0.15s',
-                }}>{s.startLabel.split(' ')[0]} → {s.endLabel.split(' ')[0]}</button>
-              ))}
-            </div>
+            <InputField value={fromVal} onChange={setFromVal} placeholder="Start location..." dot="#3b82f6" dark={darkMode} />
+            <InputField value={toVal}   onChange={setToVal}   placeholder="Destination..."    dot="#22c55e" dark={darkMode} />
           </div>
 
           {/* Find Safe Route button */}
@@ -378,6 +389,19 @@ export default function UserView({ onAddReport, userReports = [] }) {
             {phase === 'searching' ? <><Spinner />{statusMsg || 'Analyzing...'}</> : '🛡 Find Safe Route'}
           </button>
 
+          {(phase === 'results' || phase === 'error') && (
+            <button onClick={handleClearResults} style={{
+              width: '100%', marginTop: '8px', padding: '10px',
+              background: darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+              border: `1px solid ${darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'}`,
+              borderRadius: '11px', color: txt('#cbd5e1', '#374151'),
+              fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: '12px',
+              cursor: 'pointer',
+            }}>
+              Clear Search Results
+            </button>
+          )}
+
           {phase === 'error' && errorMsg && (
             <div style={{ marginTop: '10px', padding: '10px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '10px', fontSize: '11px', color: '#fca5a5', lineHeight: 1.6 }}>{errorMsg}</div>
           )}
@@ -388,15 +412,21 @@ export default function UserView({ onAddReport, userReports = [] }) {
               <div style={{ fontSize: '11px', color: sub }}>
                 <span style={{ color: '#60a5fa' }}>Lux×0.4</span> + <span style={{ color: '#34d399' }}>Activity×0.4</span> − <span style={{ color: '#f87171' }}>Risk×0.2</span>
               </div>
+              {routeData?.hasSingleRoute && (
+                <div style={{ marginTop: '6px', fontSize: '10px', color: '#94a3b8' }}>
+                  One drivable street route found for this search.
+                </div>
+              )}
             </div>
           )}
         </div>
 
         {/* Results cards */}
-        {phase === 'results' && dp && sp && (
+        {phase === 'results' && sp && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'thin', scrollbarColor: 'rgba(30,58,95,0.5) transparent', animation: 'fadeUp 0.4s ease forwards' }}>
-            <div style={{ ...card({ padding: '4px' }), display: 'flex', gap: '4px', flexShrink: 0 }}>
-              {[{ key: 'both', label: 'Both Routes' }, { key: 'dangerous', label: '🔴 Danger' }, { key: 'safe', label: '🟢 Safe' }].map(({ key, label }) => {
+            {hasBothRoutes && (
+              <div style={{ ...card({ padding: '4px' }), display: 'flex', gap: '4px', flexShrink: 0 }}>
+                {[{ key: 'both', label: 'Both Routes' }, { key: 'dangerous', label: '🔴 Danger' }, { key: 'safe', label: '🟢 Safe' }].map(({ key, label }) => {
                 const active = activeRoute === key
                 return (
                   <button key={key} onClick={() => setActiveRoute(key)} style={{
@@ -409,8 +439,9 @@ export default function UserView({ onAddReport, userReports = [] }) {
                   }}>{label}</button>
                 )
               })}
-            </div>
-            <RouteCard data={dp} type="dangerous" active={showD} darkMode={darkMode} sub={sub} card={card} txt={txt} />
+              </div>
+            )}
+            {dp && <RouteCard data={dp} type="dangerous" active={showD} darkMode={darkMode} sub={sub} card={card} txt={txt} />}
             <RouteCard data={sp} type="safe"      active={showS} darkMode={darkMode} sub={sub} card={card} txt={txt} />
           </div>
         )}
@@ -434,16 +465,6 @@ export default function UserView({ onAddReport, userReports = [] }) {
           </div>
           <div style={{ height: '3px', background: 'rgba(30,58,95,0.3)', borderRadius: '2px', overflow: 'hidden', marginTop: '8px' }}>
             <div style={{ height: '100%', width: `${Math.min(100, (lux / 40) * 100)}%`, background: luxC, transition: 'width 0.5s, background 0.4s', borderRadius: '2px' }} />
-          </div>
-        </div>
-
-        <div style={{ ...card({ padding: '10px 12px' }), border: `1px solid rgba(234,179,8,${blink ? '0.4' : '0.14'})`, transition: 'border-color 0.4s', maxWidth: '190px' }}>
-          <div style={{ display: 'flex', gap: '7px', alignItems: 'flex-start' }}>
-            <div style={{ width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0, marginTop: '2px', background: '#eab308', opacity: blink ? 1 : 0.15, boxShadow: blink ? '0 0 8px #eab308' : 'none', transition: 'all 0.3s' }} />
-            <div>
-              <div style={{ fontSize: '10px', fontWeight: 700, color: '#eab308', fontFamily: 'Syne, sans-serif', marginBottom: '3px' }}>ACTION — TRY IT</div>
-              <div style={{ fontSize: '10px', color: '#78670e', lineHeight: 1.5 }}>Cover your camera to simulate a dark alley. Watch lux drop to 0.</div>
-            </div>
           </div>
         </div>
 
@@ -641,23 +662,13 @@ function RouteCard({ data, type, active, darkMode, sub, card, txt }) {
   )
 }
 
-function InputField({ value, onChange, placeholder, dot, dark, focused, onFocus, onBlur, suggestions, onSuggest }) {
+function InputField({ value, onChange, placeholder, dot, dark }) {
   return (
     <div style={{ position: 'relative' }}>
       <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', width: '8px', height: '8px', borderRadius: '50%', background: dot, boxShadow: `0 0 6px ${dot}`, pointerEvents: 'none' }} />
-      <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} onFocus={onFocus} onBlur={onBlur}
-        style={{ width: '100%', padding: '11px 12px 11px 30px', background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', border: `1px solid ${focused ? dot : dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)'}`, borderRadius: focused && suggestions.length ? '10px 10px 0 0' : '10px', color: dark ? '#e2e8f0' : '#111', fontSize: '13px', outline: 'none', fontFamily: "'Inter', sans-serif", transition: 'border-color 0.2s', boxSizing: 'border-box' }}
+      <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        style={{ width: '100%', padding: '11px 12px 11px 30px', background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', border: `1px solid ${dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)'}`, borderRadius: '10px', color: dark ? '#e2e8f0' : '#111', fontSize: '13px', outline: 'none', fontFamily: "'Inter', sans-serif", transition: 'border-color 0.2s', boxSizing: 'border-box' }}
       />
-      {focused && suggestions.length > 0 && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, background: dark ? 'rgba(10,14,22,0.97)' : 'rgba(255,255,255,0.98)', border: `1px solid ${dot}44`, borderTop: 'none', borderRadius: '0 0 10px 10px', backdropFilter: 'blur(16px)', overflow: 'hidden' }}>
-          {suggestions.map(s => (
-            <div key={s} onMouseDown={() => onSuggest(s)} style={{ padding: '9px 14px', fontSize: '12px', color: dark ? '#94a3b8' : '#374151', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
-              onMouseEnter={e => e.currentTarget.style.background = dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-            ><span style={{ fontSize: '10px', opacity: 0.4 }}>📍</span>{s}</div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }
