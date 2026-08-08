@@ -22,6 +22,9 @@ export function AuthProvider({ children }) {
       } else {
         setLoading(false)
       }
+    }).catch(err => {
+      console.error('[AuthContext] getSession error:', err);
+      setLoading(false);
     })
 
     // Listen for auth changes
