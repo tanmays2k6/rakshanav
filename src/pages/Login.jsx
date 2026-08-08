@@ -146,18 +146,13 @@ export default function Login() {
             </div>
             {passwordError && <p className="text-red-400 text-xs mt-1.5">{passwordError}</p>}
             
-            {/* Forgot Password Link */}
             <div className="flex justify-end mt-2">
-              <button 
-                type="button" 
-                onClick={() => {
-                  // Connect to password reset flow later if needed
-                  setError('Password reset is not yet configured for this demo.');
-                }}
+              <Link 
+                to="/forgot-password"
                 className="text-xs text-gray-400 hover:text-white transition-colors focus:outline-none focus-visible:underline"
               >
                 Forgot password?
-              </button>
+              </Link>
             </div>
           </div>
 
