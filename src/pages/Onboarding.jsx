@@ -71,7 +71,16 @@ export default function Onboarding() {
   };
 
   const submitProfile = async () => {
-    if (!user) return;
+    if (!user) {
+      setError("Your session has expired. Please sign in again.");
+      return;
+    }
+    
+    if (!user.email) {
+      setError("Authenticated account does not have an email address.");
+      return;
+    }
+
     setIsSubmitting(true);
     setError(null);
     try {
@@ -84,6 +93,7 @@ export default function Onboarding() {
         .from('profiles')
         .upsert({
           id: user.id,
+          email: user.email,
           ...payloadToSubmit,
           profile_completed: true,
           updated_at: new Date().toISOString()
