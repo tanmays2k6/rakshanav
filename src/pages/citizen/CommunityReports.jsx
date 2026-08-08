@@ -48,6 +48,11 @@ export default function CommunityReports() {
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [userVote, setUserVote] = useState(null);
 
+  // Feedback State
+  const [feedbackRating, setFeedbackRating] = useState(0);
+  const [feedbackComment, setFeedbackComment] = useState('');
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+
   // Debounce search
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchTerm), 500);
@@ -131,6 +136,8 @@ export default function CommunityReports() {
     setIncidentTimeline(timeline || []);
     setIncidentComments(comments || []);
     setUserVote(vote);
+    setFeedbackRating(incident.feedback_rating || 0);
+    setFeedbackComment(incident.feedback_comment || '');
   };
 
   const handleVote = async (type) => {
@@ -162,6 +169,20 @@ export default function CommunityReports() {
        alert("Failed to post comment.");
     }
     setIsSubmittingComment(false);
+  };
+
+  const handleFeedback = async () => {
+    if (!user || feedbackRating === 0) return;
+    setIsSubmittingFeedback(true);
+    const res = await hazardService.submitFeedback(selectedIncident.id, feedbackRating, feedbackComment);
+    if (res.success) {
+      alert("Feedback submitted successfully!");
+      // update local state
+      setSelectedIncident(prev => ({...prev, feedback_rating: feedbackRating, feedback_comment: feedbackComment}));
+    } else {
+      alert("Failed to submit feedback.");
+    }
+    setIsSubmittingFeedback(false);
   };
 
   const getStatusStyle = (status) => {
@@ -389,6 +410,48 @@ export default function CommunityReports() {
                            <span className="text-xs font-bold">{selectedIncident.downvotes || 0} Not Present</span>
                         </button>
                      </div>
+
+                     {/* Feedback Section (Only for Author on Resolved Incidents) */}
+                     {selectedIncident.status === 'Resolved' && user && selectedIncident.user_id === user.id && (
+                        <div className="bg-brand-neonGreen/10 border border-brand-neonGreen/30 p-4 rounded-xl">
+                           <h4 className="text-[11px] font-mono text-brand-neonGreen uppercase tracking-widest mb-2">Resolution Feedback</h4>
+                           {selectedIncident.feedback_rating ? (
+                             <div>
+                                <div className="flex gap-1 mb-2">
+                                  {[1,2,3,4,5].map(star => (
+                                    <span key={star} className={`text-lg ${star <= selectedIncident.feedback_rating ? 'text-yellow-400' : 'text-gray-600'}`}>★</span>
+                                  ))}
+                                </div>
+                                <p className="text-sm text-gray-300 italic">"{selectedIncident.feedback_comment}"</p>
+                             </div>
+                           ) : (
+                             <div>
+                                <p className="text-xs text-gray-400 mb-3">Your report has been resolved! Please rate the resolution to help us improve.</p>
+                                <div className="flex gap-2 mb-3">
+                                  {[1,2,3,4,5].map(star => (
+                                    <button 
+                                      key={star} 
+                                      onClick={() => setFeedbackRating(star)}
+                                      className={`text-2xl transition-colors ${star <= feedbackRating ? 'text-yellow-400' : 'text-gray-600 hover:text-yellow-400/50'}`}
+                                    >★</button>
+                                  ))}
+                                </div>
+                                <input 
+                                   type="text"
+                                   placeholder="Additional comments (optional)"
+                                   value={feedbackComment}
+                                   onChange={e => setFeedbackComment(e.target.value)}
+                                   className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-brand-neonGreen mb-3"
+                                />
+                                <button 
+                                   onClick={handleFeedback}
+                                   disabled={isSubmittingFeedback || feedbackRating === 0}
+                                   className="bg-brand-neonGreen hover:bg-green-500 text-black px-4 py-2 rounded-lg text-sm font-bold transition-colors disabled:opacity-50"
+                                >Submit Feedback</button>
+                             </div>
+                           )}
+                        </div>
+                     )}
 
                      {/* Timeline */}
                      <div>

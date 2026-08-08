@@ -3,11 +3,13 @@ import { useAuth } from '../contexts/AuthContext';
 import { 
   LogOut, Home, Navigation, Bot, Map, ShieldAlert, 
   History, MapPin, Users, Bell, User, Settings, 
-  Search, Sun, Moon, Phone, Menu, ChevronLeft
+  Search, Sun, Moon, Phone, Menu, ChevronLeft,
+  Activity, AlertTriangle, ShieldCheck
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { notificationService } from '../services/notificationService';
 import { motion, AnimatePresence } from 'framer-motion';
+import { supabase } from '../lib/supabase';
 import Logo from '../components/Logo';
 
 export default function DashboardLayout({ children, title, showRightSidebar = false, rightSidebarContent }) {
@@ -18,6 +20,9 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [hasUnreadNotifs, setHasUnreadNotifs] = useState(false);
+  
+  // Organization Context for Enterprise Users
+  const [organization, setOrganization] = useState(null);
 
   useEffect(() => {
     if (!user) return;
@@ -29,6 +34,46 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
     };
     fetchUnread();
     
+    // Fetch Organization if Enterprise or Government
+    if (role === 'enterprise' || role === 'government') {
+      const fetchOrganization = async () => {
+        try {
+          if (role === 'enterprise') {
+            const { data: memberData, error: memberError } = await supabase
+              .from('organization_members')
+              .select('org_id, role, organizations(name, short_id)')
+              .eq('user_id', user.id)
+              .single();
+              
+            if (!memberError && memberData) {
+              setOrganization({
+                ...memberData.organizations,
+                memberRole: memberData.role
+              });
+            }
+          } else {
+            const { data: memberData, error: memberError } = await supabase
+              .from('government_members')
+              .select('org_id, role, department, designation, government_organizations(name, jurisdiction)')
+              .eq('user_id', user.id)
+              .single();
+              
+            if (!memberError && memberData) {
+              setOrganization({
+                ...memberData.government_organizations,
+                memberRole: memberData.role,
+                department: memberData.department,
+                designation: memberData.designation
+              });
+            }
+          }
+        } catch (err) {
+          console.error("Error fetching organization:", err);
+        }
+      };
+      fetchOrganization();
+    }
+    
     notificationService.startRealtime(user.id);
     const unsub = notificationService.subscribe(newData => {
       setHasUnreadNotifs(newData.some(n => !n.is_read));
@@ -37,7 +82,7 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
     return () => {
       unsub();
     };
-  }, [user]);
+  }, [user, role]);
 
   // Handle window resize for auto-collapse
   useEffect(() => {
@@ -73,10 +118,35 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
       { label: 'Profile', icon: User, path: '/dashboard/profile' }
     ],
     enterprise: [
-      { label: 'Commute Analytics', icon: Home, path: '/enterprise' }
+      { label: 'Overview', icon: Home, path: '/enterprise' },
+      { label: 'Live Operations', icon: Navigation, path: '/enterprise/live' },
+      { label: 'Employees', icon: Users, path: '/enterprise/employees' },
+      { label: 'Commute Analytics', icon: Activity, path: '/enterprise/analytics' },
+      { label: 'Routes & Hotspots', icon: MapPin, path: '/enterprise/routes' },
+      { label: 'Safety Alerts', icon: ShieldAlert, path: '/enterprise/alerts' },
+      { label: 'Incidents', icon: AlertTriangle, path: '/enterprise/incidents' },
+      { label: 'Reports', icon: History, path: '/enterprise/reports' },
+      { label: 'Notifications', icon: Bell, path: '/enterprise/notifications' },
+      { label: 'Emergency Policies', icon: ShieldCheck, path: '/enterprise/emergency' },
+      // Admin dividers are handled visually if needed, we can just append them here
+      { label: 'Organization Settings', icon: Settings, path: '/enterprise/settings' },
+      { label: 'Team & Roles', icon: Users, path: '/enterprise/team' },
+      { label: 'Audit Logs', icon: History, path: '/enterprise/audit' }
     ],
     government: [
-      { label: 'Command Center', icon: ShieldAlert, path: '/government' }
+      { label: 'Command Center', icon: Map, path: '/government' },
+      { label: 'Live Reports', icon: ShieldAlert, path: '/government/reports' },
+      { label: 'Ward Monitoring', icon: Users, path: '/government/ward' },
+      { label: 'Infrastructure', icon: Bot, path: '/government/infrastructure' },
+      { label: 'Notifications', icon: Bell, path: '/government/notifications' },
+      { label: 'Analytics', icon: History, path: '/government/analytics' }
+    ],
+    admin: [
+      { label: 'System Overview', icon: Activity, path: '/admin' },
+      { label: 'User Management', icon: Users, path: '/admin/users' },
+      { label: 'Global Reports', icon: ShieldAlert, path: '/admin/reports' },
+      { label: 'Audit Logs', icon: History, path: '/admin/audit' },
+      { label: 'Platform Settings', icon: Settings, path: '/admin/settings' }
     ]
   };
 
@@ -109,10 +179,10 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
           <Logo size={isCollapsed ? 'sm' : 'lg'} />
         </div>
 
-        {/* User Profile Summary */}
+        {/* User Profile / Organization Summary */}
         <div className={`p-5 flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'} h-24`}>
           <div className="relative">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-blue to-brand-neonGreen p-[2px] shrink-0">
+            <div className={`w-10 h-10 rounded-xl bg-gradient-to-tr ${role === 'enterprise' ? 'from-brand-orange to-yellow-500' : 'from-brand-blue to-brand-neonGreen'} p-[2px] shrink-0`}>
               <div className={`w-full h-full rounded-[10px] flex items-center justify-center overflow-hidden ${isDarkMode ? 'bg-brand-dark' : 'bg-white'}`}>
                 {profile?.avatar_url || user?.user_metadata?.avatar_url ? (
                   <img src={profile?.avatar_url || user?.user_metadata?.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
@@ -122,7 +192,7 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
               </div>
             </div>
             {/* Online Indicator */}
-            <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-brand-neonGreen border-2 border-[#080c10] rounded-full"></div>
+            <div className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 ${role === 'enterprise' ? 'bg-brand-orange' : 'bg-brand-neonGreen'} border-2 border-[#080c10] rounded-full`}></div>
           </div>
           
           <AnimatePresence>
@@ -131,10 +201,24 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
                 initial={{ opacity: 0, width: 0 }} 
                 animate={{ opacity: 1, width: 'auto' }} 
                 exit={{ opacity: 0, width: 0 }}
-                className="min-w-0 overflow-hidden"
+                className="min-w-0 overflow-hidden flex flex-col"
               >
-                <h1 className="font-display font-bold text-sm truncate">{profile?.full_name || user?.email || 'User'}</h1>
-                <p className="text-xs text-brand-neonGreen uppercase tracking-wider font-mono truncate">{role}</p>
+                {role === 'enterprise' || role === 'government' ? (
+                  <>
+                    <h1 className="font-display font-bold text-sm truncate">{organization?.name || profile?.full_name || (role === 'enterprise' ? 'Enterprise Admin' : 'Gov Official')}</h1>
+                    <p className={`text-[10px] uppercase tracking-wider font-mono truncate ${role === 'enterprise' ? 'text-brand-orange' : 'text-blue-400'}`}>
+                      {role === 'enterprise' ? 
+                        (organization?.short_id ? `ORG ID: ${organization.short_id}` : 'ENTERPRISE') :
+                        (organization?.department || 'GOVERNMENT')
+                      }
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h1 className="font-display font-bold text-sm truncate">{profile?.full_name || user?.email || 'User'}</h1>
+                    <p className="text-xs text-brand-neonGreen uppercase tracking-wider font-mono truncate">{role}</p>
+                  </>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -145,35 +229,45 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
           {links.map((link) => {
             const Icon = link.icon;
             const isActive = location.pathname === link.path;
+            
+            // Render a divider for admin settings if it's the first admin item
+            const isAdminSection = role === 'enterprise' && link.label === 'Organization Settings';
+            
             return (
-              <Link
-                key={link.path}
-                to={link.path}
-                title={isCollapsed ? link.label : ""}
-                className={`flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2.5 rounded-[12px] transition-all duration-200 group relative
-                  ${isActive 
-                    ? (isDarkMode ? 'bg-brand-blue/5 text-white shadow-[0_0_20px_rgba(59,130,246,0.1)] border border-white/5' : 'bg-blue-50/50 text-brand-blue font-medium border border-transparent')
-                    : (isDarkMode ? 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 border border-transparent')
-                  }
-                `}
-              >
-                {isActive && (
-                   <motion.div layoutId="activeNav" className="absolute left-0 w-[3px] h-5 bg-brand-blue rounded-r-full shadow-[0_0_12px_rgba(59,130,246,0.8)]" />
+              <React.Fragment key={link.path}>
+                {isAdminSection && (
+                  <div className={`my-4 border-t ${isDarkMode ? 'border-white/10' : 'border-gray-200'} pt-4`}>
+                    {!isCollapsed && <p className="px-3 text-[10px] uppercase font-mono tracking-wider text-gray-500 mb-2">Administration</p>}
+                  </div>
                 )}
-                <Icon className={`w-[18px] h-[18px] ${isActive ? 'text-brand-blue drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : 'group-hover:text-brand-blue'} transition-colors shrink-0`} />
-                <AnimatePresence>
-                  {!isCollapsed && (
-                    <motion.span 
-                      initial={{ opacity: 0, width: 0 }} 
-                      animate={{ opacity: 1, width: 'auto' }} 
-                      exit={{ opacity: 0, width: 0 }}
-                      className="text-[13px] font-medium whitespace-nowrap overflow-hidden"
-                    >
-                      {link.label}
-                    </motion.span>
+                <Link
+                  to={link.path}
+                  title={isCollapsed ? link.label : ""}
+                  className={`flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2.5 rounded-[12px] transition-all duration-200 group relative
+                    ${isActive 
+                      ? (isDarkMode ? 'bg-brand-blue/5 text-white shadow-[0_0_20px_rgba(59,130,246,0.1)] border border-white/5' : 'bg-blue-50/50 text-brand-blue font-medium border border-transparent')
+                      : (isDarkMode ? 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 border border-transparent')
+                    }
+                  `}
+                >
+                  {isActive && (
+                     <motion.div layoutId="activeNav" className={`absolute left-0 w-[3px] h-5 rounded-r-full shadow-[0_0_12px_rgba(59,130,246,0.8)] ${role === 'enterprise' ? 'bg-brand-orange shadow-[0_0_12px_rgba(249,115,22,0.8)]' : (role === 'government' ? 'bg-blue-400 shadow-[0_0_12px_rgba(96,165,250,0.8)]' : 'bg-brand-blue')}`} />
                   )}
-                </AnimatePresence>
-              </Link>
+                  <Icon className={`w-[18px] h-[18px] ${isActive ? (role === 'enterprise' ? 'text-brand-orange drop-shadow-[0_0_8px_rgba(249,115,22,0.5)]' : (role === 'government' ? 'text-blue-400 drop-shadow-[0_0_8px_rgba(96,165,250,0.5)]' : 'text-brand-blue drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]')) : (role === 'enterprise' ? 'group-hover:text-brand-orange' : (role === 'government' ? 'group-hover:text-blue-400' : 'group-hover:text-brand-blue'))} transition-colors shrink-0`} />
+                  <AnimatePresence>
+                    {!isCollapsed && (
+                      <motion.span 
+                        initial={{ opacity: 0, width: 0 }} 
+                        animate={{ opacity: 1, width: 'auto' }} 
+                        exit={{ opacity: 0, width: 0 }}
+                        className="text-[13px] font-medium whitespace-nowrap overflow-hidden"
+                      >
+                        {link.label}
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </Link>
+              </React.Fragment>
             );
           })}
         </nav>
@@ -191,7 +285,7 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
           </button>
           
           <Link 
-            to="/dashboard/settings"
+            to={role === 'enterprise' ? '/enterprise/settings' : '/dashboard/settings'}
             title={isCollapsed ? 'Settings' : ""}
             className={`flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-3 rounded-xl transition-colors w-full text-[13px] font-medium
               ${isDarkMode ? 'text-gray-400 hover:text-white hover:bg-white/5' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'}`}
@@ -216,13 +310,30 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
       <main className="flex-1 flex flex-col relative h-full min-w-0">
         
         {/* Top Header - Perfect Alignment */}
-        <header className="h-20 flex items-center justify-between px-10 z-10 shrink-0">
+        <header className="h-20 flex items-center justify-between px-10 z-10 shrink-0 border-b border-white/5">
           
           {/* Left: Greeting & Date */}
           <div className="flex flex-col justify-center pt-2">
-            <h2 className="text-xl font-bold font-display tracking-tight leading-tight truncate max-w-[300px] xl:max-w-md">
-              Hello, {profile?.full_name ? profile.full_name.split(' ')[0] : 'Tanmay'}
-            </h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-bold font-display tracking-tight leading-tight truncate max-w-[300px] xl:max-w-md">
+                Hello, {profile?.full_name ? profile.full_name.split(' ')[0] : (role === 'enterprise' ? 'Admin' : (role === 'admin' ? 'Super Admin' : 'Tanmay'))}
+              </h2>
+              {role === 'enterprise' && (
+                <div className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider border ${isDarkMode ? 'bg-brand-orange/10 border-brand-orange/30 text-brand-orange' : 'bg-orange-100 border-orange-300 text-orange-700'}`}>
+                  Enterprise Operations
+                </div>
+              )}
+              {role === 'government' && (
+                <div className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider border ${isDarkMode ? 'bg-blue-500/10 border-blue-500/30 text-blue-400' : 'bg-blue-100 border-blue-300 text-blue-700'}`}>
+                  Municipal Command Center
+                </div>
+              )}
+              {role === 'admin' && (
+                <div className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider border ${isDarkMode ? 'bg-purple-500/10 border-purple-500/30 text-purple-400' : 'bg-purple-100 border-purple-300 text-purple-700'}`}>
+                  System Administration
+                </div>
+              )}
+            </div>
             <div className="flex items-center gap-2 mt-1">
               <p className={`text-[12px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} font-mono uppercase tracking-wider`}>
                 {formattedDate}
@@ -246,7 +357,7 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
                   type="text" 
                   onFocus={() => setIsSearchFocused(true)}
                   onBlur={() => setIsSearchFocused(false)}
-                  placeholder="Search places, trips, reports..." 
+                  placeholder={role === 'government' ? "Search reports, locations, wards..." : "Search places, trips, reports..."} 
                   className={`w-full pl-10 pr-4 py-2.5 rounded-xl text-[13px] outline-none transition-all shadow-sm
                     ${isDarkMode 
                       ? 'bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:border-brand-blue/50 focus:bg-white/10' 
@@ -261,11 +372,18 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
 
           {/* Right: GPS, Notification, Profile */}
           <div className="flex items-center gap-6 shrink-0">
-            {/* GPS Badge in Header */}
-            <div className={`hidden sm:flex items-center gap-2 px-4 py-1.5 rounded-full border ${isDarkMode ? 'bg-brand-neonGreen/5 border-brand-neonGreen/20 text-brand-neonGreen' : 'bg-green-50 border-green-200 text-green-700'}`}>
-              <div className="w-2 h-2 rounded-full bg-brand-neonGreen animate-pulse shadow-[0_0_12px_rgba(34,197,94,0.9)]"></div>
-              <span className="text-[12px] font-mono font-bold tracking-wide uppercase">GPS Active</span>
-            </div>
+            {/* System Status / GPS Badge in Header */}
+            {role === 'government' ? (
+              <div className={`hidden sm:flex items-center gap-2 px-4 py-1.5 rounded-full border ${isDarkMode ? 'bg-brand-neonGreen/5 border-brand-neonGreen/20 text-brand-neonGreen' : 'bg-green-50 border-green-200 text-green-700'}`}>
+                <div className="w-2 h-2 rounded-full bg-brand-neonGreen animate-pulse shadow-[0_0_12px_rgba(34,197,94,0.9)]"></div>
+                <span className="text-[12px] font-mono font-bold tracking-wide uppercase">System Operational</span>
+              </div>
+            ) : (
+              <div className={`hidden sm:flex items-center gap-2 px-4 py-1.5 rounded-full border ${isDarkMode ? 'bg-brand-neonGreen/5 border-brand-neonGreen/20 text-brand-neonGreen' : 'bg-green-50 border-green-200 text-green-700'}`}>
+                <div className="w-2 h-2 rounded-full bg-brand-neonGreen animate-pulse shadow-[0_0_12px_rgba(34,197,94,0.9)]"></div>
+                <span className="text-[12px] font-mono font-bold tracking-wide uppercase">GPS Active</span>
+              </div>
+            )}
 
             <button onClick={() => navigate('/dashboard/notifications')} className={`w-10 h-10 rounded-xl flex items-center justify-center relative transition-colors group
               ${isDarkMode ? 'bg-white/5 hover:bg-white/10 border border-white/10' : 'bg-white hover:bg-gray-50 border border-gray-200 shadow-sm'}`}>

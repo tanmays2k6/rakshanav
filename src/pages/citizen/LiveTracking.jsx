@@ -10,7 +10,6 @@ export default function LiveTracking() {
   const [telemetry, setTelemetry] = useState(null);
   const [duration, setDuration] = useState(1);
   const [error, setError] = useState(null);
-  const [demoMode, setDemoMode] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -34,19 +33,10 @@ export default function LiveTracking() {
       liveTrackingService.startWatching(
         (data) => setTelemetry(data),
         (err) => {
-          if (err === 'User denied Geolocation') {
-             // Fallback to demo
-             setDemoMode(true);
-             liveTrackingService.stopSession();
-             liveTrackingService.startSession(user.id, duration).then(r => {
-                setSession(r);
-                liveTrackingService.startWatching((data) => setTelemetry(data), null, true);
-             });
-          } else {
-             setError(err);
-          }
-        },
-        demoMode
+          setError(err);
+          liveTrackingService.stopSession();
+          setSession(null);
+        }
       );
     } else {
       setError(res.error);
@@ -57,7 +47,6 @@ export default function LiveTracking() {
     await liveTrackingService.stopSession();
     setSession(null);
     setTelemetry(null);
-    setDemoMode(false);
   };
 
   const handleSOS = () => {
@@ -87,7 +76,6 @@ export default function LiveTracking() {
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/30">
             <div className="w-2 h-2 rounded-full bg-brand-neonGreen animate-pulse"></div>
             <span className="text-xs font-mono font-medium text-brand-neonGreen">ACTIVE</span>
-            {demoMode && <span className="text-xs font-mono font-medium text-brand-orange ml-2">(DEMO MODE)</span>}
           </div>
         )}
       </div>
@@ -143,7 +131,7 @@ export default function LiveTracking() {
                 <span className="text-sm text-white">Source</span>
               </div>
               <span className="text-xs font-mono bg-white/10 px-2 py-1 rounded text-gray-300">
-                {demoMode ? 'Simulated' : 'GPS'}
+                GPS
               </span>
             </div>
             
@@ -177,11 +165,6 @@ export default function LiveTracking() {
               >
                 <Play className="w-4 h-4" /> Start Live Sharing
               </button>
-              
-              <div className="flex items-center gap-2 mt-2">
-                  <input type="checkbox" id="demoMode" checked={demoMode} onChange={(e) => setDemoMode(e.target.checked)} className="rounded bg-white/10 border-white/20" />
-                  <label htmlFor="demoMode" className="text-xs text-gray-400">Force Demo Mode (Simulation)</label>
-              </div>
             </div>
           ) : (
             <div className="glass-panel p-4 mt-auto space-y-3">

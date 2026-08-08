@@ -19,7 +19,6 @@ class LiveTrackingService {
     this.isTracking = false;
     this.onUpdateCallback = null;
     this.onErrorCallback = null;
-    this.demoInterval = null;
   }
 
   // Calculate Haversine distance in meters
@@ -74,14 +73,9 @@ class LiveTrackingService {
   }
 
   // 2. Start physical GPS Watch
-  startWatching(onUpdate, onError, useDemoMode = false) {
+  startWatching(onUpdate, onError) {
     this.onUpdateCallback = onUpdate;
     this.onErrorCallback = onError;
-
-    if (useDemoMode) {
-      this.startDemoTracking();
-      return;
-    }
 
     if (!navigator.geolocation) {
       if (this.onErrorCallback) this.onErrorCallback('Geolocation is not supported by your browser');
@@ -143,8 +137,8 @@ class LiveTrackingService {
         const battery = await navigator.getBattery();
         return Math.round(battery.level * 100);
       }
-    } catch (e) { /* ignore */ }
-    return 100; // Mock full battery if API not available
+    } catch(e) {}
+    return null; 
   }
 
   async pushLocationToSupabase(locData) {
@@ -180,11 +174,6 @@ class LiveTrackingService {
       navigator.geolocation.clearWatch(this.watchId);
       this.watchId = null;
     }
-    
-    if (this.demoInterval) {
-      clearInterval(this.demoInterval);
-      this.demoInterval = null;
-    }
 
     if (this.currentSessionId) {
       await supabase
@@ -198,38 +187,6 @@ class LiveTrackingService {
     this.lastSentLocation = null;
   }
 
-  // 4. Demo Mode (Simulation)
-  startDemoTracking() {
-    let lat = 12.9716; // Bengaluru center
-    let lng = 77.5946;
-    let heading = 90;
-    
-    this.demoInterval = setInterval(async () => {
-      // Simulate moving east-ish
-      lat += (Math.random() - 0.4) * 0.0001;
-      lng += 0.0002;
-      heading = (heading + (Math.random() * 10 - 5)) % 360;
-      
-      const locData = {
-        latitude: lat,
-        longitude: lng,
-        accuracy: 10,
-        speed: 12 + Math.random() * 5, // km/h
-        heading,
-        altitude: 900,
-        battery: await this.getBatteryLevel(),
-        timestamp: new Date().toISOString()
-      };
-
-      if (this.currentSessionId && this.isTracking) {
-        this.pushLocationToSupabase(locData);
-      }
-      
-      if (this.onUpdateCallback) {
-        this.onUpdateCallback(locData);
-      }
-    }, 5000); // Demo updates every 5s
-  }
 
   // 5. Fire SOS
   async triggerSOS(userId) {

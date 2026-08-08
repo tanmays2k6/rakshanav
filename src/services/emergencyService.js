@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { liveTrackingService } from './liveTrackingService';
+import { notificationService } from './notificationService';
 
 export const emergencyService = {
   // -------------------------
@@ -141,16 +142,20 @@ export const emergencyService = {
     };
   },
 
-  simulateEmergencyNotifications(userId, eventId, token, locationData) {
-    console.log("==========================================");
-    console.log(`🚨 [SOS ACTIVATED] Triggering notifications for user: ${userId}`);
-    console.log(`📍 Location: ${locationData.lat}, ${locationData.lng}`);
-    if (token) {
-      console.log(`🔗 Live Tracking Link: https://rakshanav.app/live/${token}`);
-    }
-    console.log(`📡 Simulating dispatch to: Twilio SMS, WhatsApp Cloud API, Firebase Push...`);
-    console.log("==========================================");
-    // In production, this would trigger a Supabase Edge Function that actually sends the messages.
+  async simulateEmergencyNotifications(userId, eventId, token, locationData) {
+    // In production, this would also trigger SMS/WhatsApp via Edge Functions.
+    // Here we insert a critical system notification to alert authorities/contacts.
+    const message = `SOS Activated! User needs immediate assistance at (${locationData.lat}, ${locationData.lng}). \nLive Tracking Link: https://rakshanav.app/live/${token}`;
+    
+    await notificationService.createNotification({
+      title: '🚨 CRITICAL SOS ALERT',
+      message: message,
+      type: 'alert',
+      priority: 'critical',
+      recipient_type: 'all', // Or specific contacts if implemented
+      sender_id: userId,
+      metadata: { event_id: eventId, live_token: token }
+    });
   },
 
   async resolveSOS(id) {

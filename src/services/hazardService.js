@@ -88,9 +88,7 @@ export const hazardService = {
    * Submit a new hazard/incident report
    */
   async submitReport(reportData) {
-    if (import.meta.env.DEV) {
-      console.log('[Supabase] Inserting reportData:', reportData);
-    }
+
     
     const { error, data } = await supabase
       .from('incident_reports')
@@ -105,9 +103,7 @@ export const hazardService = {
       return { success: false, error: error.message, code: error.code };
     }
     
-    if (import.meta.env.DEV) {
-      console.log('[Supabase] Insert success:', data);
-    }
+
     return { success: true, id: data.id };
   },
 
@@ -212,8 +208,24 @@ export const hazardService = {
       )
       .subscribe();
       
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }
-};
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    },
+  
+    /**
+     * Submit feedback on a resolved incident
+     */
+    async submitFeedback(incidentId, rating, comment) {
+      const { error } = await supabase
+        .from('incident_reports')
+        .update({ feedback_rating: rating, feedback_comment: comment })
+        .eq('id', incidentId);
+  
+      if (error) {
+        console.error('Error submitting feedback:', error);
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    }
+  };

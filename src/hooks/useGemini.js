@@ -40,8 +40,17 @@ export function useGeminiChat() {
     addMessage({ id: aiMessageId, role: 'ai', text: '' });
 
     try {
-      // Mock fast GPS
-      const loc = { lat: 12.9716, lng: 77.5946 }; // Default BLR
+      let loc = { lat: 12.9716, lng: 77.5946 }; // Default BLR
+      if (navigator.geolocation) {
+         try {
+           const pos = await new Promise((resolve, reject) => {
+             navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 3000 });
+           });
+           loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+         } catch(e) {
+           console.warn("Could not fetch GPS for AI context. Using default location.");
+         }
+      }
 
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
@@ -95,6 +104,10 @@ export function useGeminiChat() {
             }
           }
         }
+      }
+      
+      if (!aiText) {
+          throw new Error("Empty AI response received.");
       }
 
     } catch (error) {
