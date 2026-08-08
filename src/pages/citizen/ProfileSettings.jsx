@@ -15,6 +15,31 @@ export default function ProfileSettings() {
   // Avatar upload state
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef(null);
+  
+  // Delete profile state
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeletingConfirm, setIsDeletingConfirm] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
+
+  const handleDeleteProfile = async () => {
+    setIsDeletingConfirm(true);
+    setDeleteError(null);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', user.id);
+        
+      if (error) throw error;
+      
+      await refreshProfile(); // This will fetch and setProfileCompleted(false)
+    } catch (err) {
+      console.error(err);
+      setDeleteError('Your profile could not be deleted. Please try again.');
+    } finally {
+      setIsDeletingConfirm(false);
+    }
+  };
 
   useEffect(() => {
     if (profile) {
@@ -231,6 +256,56 @@ export default function ProfileSettings() {
             </div>
           )}
 
+          {activeTab === 'privacy' && (
+            <div className="space-y-6 max-w-2xl animate-fade-in">
+              <div className="glass-panel p-6 space-y-4 border border-red-500/20">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-display font-bold text-red-400">Danger Zone</h3>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-white font-medium mb-1">Delete Profile</h4>
+                    <p className="text-sm text-gray-400">
+                      This will permanently remove your RakshaNav profile information. Your underlying authentication account will remain active, but you will need to complete onboarding again. This action cannot be undone.
+                    </p>
+                  </div>
+                  
+                  {isDeleting ? (
+                    <div className="bg-red-500/10 border border-red-500/50 rounded-xl p-4">
+                      <p className="text-red-400 text-sm font-medium mb-4">Are you absolutely sure you want to delete your profile?</p>
+                      <div className="flex gap-3">
+                        <button 
+                          onClick={() => setIsDeleting(false)}
+                          disabled={isDeletingConfirm}
+                          className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button 
+                          onClick={handleDeleteProfile}
+                          disabled={isDeletingConfirm}
+                          className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                        >
+                          {isDeletingConfirm ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                          {isDeletingConfirm ? 'Deleting...' : 'Yes, Delete Profile'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={() => setIsDeleting(true)}
+                      className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Delete Profile
+                    </button>
+                  )}
+                  {deleteError && (
+                    <p className="text-red-400 text-sm mt-2">{deleteError}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

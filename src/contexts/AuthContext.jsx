@@ -65,6 +65,7 @@ export function AuthProvider({ children }) {
           console.warn('[AuthContext] Profile not found for user. Will initialize as unassigned.');
           setRole('unassigned');
           setProfile(null);
+          setProfileCompleted(false);
         } else {
           throw error;
         }
