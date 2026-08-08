@@ -1,4 +1,5 @@
 import React from 'react'
+import Logo from './Logo'
 
 export default function Header({ view, onViewChange }) {
   const btn = (active, isGovt) => ({
@@ -29,20 +30,8 @@ export default function Header({ view, onViewChange }) {
     }}>
 
       {/* Logo */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <div style={{
-          width: '34px', height: '34px', borderRadius: '9px',
-          background: 'rgba(239,68,68,0.13)', border: '1px solid rgba(239,68,68,0.28)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '17px',
-        }}>🛡</div>
-        <div>
-          <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: '18px', letterSpacing: '-0.02em', color: '#fff' }}>
-            RakshaNav
-          </div>
-          <div style={{ fontSize: '10px', fontFamily: "'JetBrains Mono', monospace", color: '#4a7aab', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-            Safe Urban Navigation
-          </div>
-        </div>
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <Logo size="sm" />
       </div>
 
       {/* Toggle */}

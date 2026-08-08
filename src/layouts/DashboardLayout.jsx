@@ -8,6 +8,7 @@ import {
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { notificationService } from '../services/notificationService';
 import { motion, AnimatePresence } from 'framer-motion';
+import Logo from '../components/Logo';
 
 export default function DashboardLayout({ children, title, showRightSidebar = false, rightSidebarContent }) {
   const { role, user, profile, signOut } = useAuth();
@@ -102,6 +103,11 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
         >
           {isCollapsed ? <Menu className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
         </button>
+
+        {/* Branding Logo */}
+        <div className={`pt-6 pb-2 flex items-center justify-center ${isCollapsed ? 'px-2' : 'px-6'}`}>
+          <Logo size={isCollapsed ? 'sm' : 'lg'} />
+        </div>
 
         {/* User Profile Summary */}
         <div className={`p-5 flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'} h-24`}>

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate, Link } from 'react-router-dom';
-import { Shield } from 'lucide-react';
+import Logo from '../components/Logo';
 
 export default function Signup() {
   const [email, setEmail] = useState('');
@@ -48,7 +48,7 @@ export default function Signup() {
 
       <div className="glass-panel w-full max-w-md p-8 relative z-10 flex flex-col gap-6">
         <div className="flex flex-col items-center gap-2 mb-4">
-          <Shield className="w-12 h-12 text-brand-blue" />
+          <Logo size="xl" className="mb-2" />
           <h1 className="text-3xl font-display font-bold text-white tracking-tight">Create Account</h1>
           <p className="text-gray-400 text-sm">Join the RakshaNav network</p>
         </div>

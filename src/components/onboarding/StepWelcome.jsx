@@ -1,5 +1,5 @@
-import React from 'react';
 import { ArrowRight, Clock } from 'lucide-react';
+import Logo from '../Logo';
 
 export default function StepWelcome({ onNext, user }) {
   return (
@@ -13,7 +13,8 @@ export default function StepWelcome({ onNext, user }) {
       )}
       
       <div>
-        <h1 className="text-3xl font-display font-bold text-white mb-2">Welcome to RakshaNav</h1>
+        <Logo size="lg" className="mb-4" />
+        <h1 className="text-3xl font-display font-bold text-white mb-2">Welcome</h1>
         <p className="text-gray-400">Let's personalize your experience and make your journeys safer.</p>
       </div>
 

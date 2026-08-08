@@ -4,7 +4,8 @@ import { supabase } from '../lib/supabase';
 import { MapContainer, TileLayer, Marker, Polyline, Circle, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { Battery, Navigation2, Activity, Clock, ShieldCheck, MapPin } from 'lucide-react';
+import { Battery, Navigation2, Activity, Clock, MapPin } from 'lucide-react';
+import Logo from '../components/Logo';
 
 // Fix for Leaflet default icons in React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -154,8 +155,8 @@ export default function PublicTracking() {
   if (error) {
     return (
       <div className="min-h-screen bg-[#080c12] flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-6">
-          <ShieldCheck className="w-8 h-8 text-gray-500" />
+        <div className="mb-6 opacity-50 grayscale">
+          <Logo size="xl" />
         </div>
         <h2 className="text-2xl font-bold text-white mb-2">Tracking Inactive</h2>
         <p className="text-gray-400">{error}</p>
@@ -174,11 +175,12 @@ export default function PublicTracking() {
         <div className="max-w-2xl mx-auto flex justify-between items-start gap-4">
           <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl p-4 pointer-events-auto flex-1 shadow-2xl">
             <div className="flex items-center gap-3 border-b border-white/10 pb-3 mb-3">
-              <div className="relative flex h-3 w-3">
+              <Logo size="sm" />
+              <div className="relative flex h-3 w-3 ml-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-neonGreen opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-brand-neonGreen"></span>
               </div>
-              <h1 className="font-display font-bold text-white text-lg tracking-tight">RakshaNav Live</h1>
+              <span className="text-white font-bold tracking-tight">Live Tracker</span>
             </div>
             
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
