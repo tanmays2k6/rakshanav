@@ -1,0 +1,32 @@
+export const SEED_REPORTS = [
+  {
+    id: 1,
+    lat: 12.9227, lng: 77.6174,
+    type: 'Bad Lighting',
+    lux: 3.2,
+    description: 'Streetlight broken near metro pillar 45. Complete blackout after 9pm.',
+    timestamp: '10 mins ago',
+    status: 'Pending',
+    severity: 'critical',
+  },
+  {
+    id: 2,
+    lat: 12.9258, lng: 77.6241,
+    type: 'Broken Infrastructure',
+    lux: 1.8,
+    description: 'Three consecutive streetlights out on service road stretch.',
+    timestamp: '34 mins ago',
+    status: 'Pending',
+    severity: 'critical',
+  },
+  {
+    id: 3,
+    lat: 12.9199, lng: 77.6133,
+    type: 'Suspicious Activity',
+    lux: 4.5,
+    description: 'Group loitering in dark underpass. No CCTV visible.',
+    timestamp: '1 hr ago',
+    status: 'Pending',
+    severity: 'high',
+  },
+];

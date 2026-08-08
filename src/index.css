@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+  }
+  body {
+    font-family: 'Inter', sans-serif;
+    background: #080c10;
+    color: #e8edf2;
+    overflow-x: hidden;
+  }
+}
+
+@layer utilities {
+  .glass-panel {
+    @apply bg-[rgba(8,12,18,0.6)] border border-[rgba(255,255,255,0.03)] rounded-[16px] backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)];
+  }
+  
+  .glass-panel-light {
+    @apply bg-[rgba(255,255,255,0.85)] border border-[rgba(0,0,0,0.04)] rounded-[16px] backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.05)];
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400;
+  }
+  
+  .shimmer-bg {
+    @apply bg-gradient-to-r from-white/5 via-white/10 to-white/5 bg-[length:400%_100%] animate-shimmer;
+  }
+  
+  .hover-lift {
+    @apply transition-transform duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-brand-blue/10;
+  }
+
+  .hover-glow {
+    @apply transition-all duration-300 hover:shadow-[0_0_15px_rgba(59,130,246,0.15)];
+  }
+
+  .radius-card {
+    @apply rounded-[16px];
+  }
+  .radius-btn {
+    @apply rounded-[12px];
+  }
+  .radius-input {
+    @apply rounded-[12px];
+  }
+  .radius-float {
+    @apply rounded-[14px];
+  }
+}
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(30,58,95,0.5); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(30,58,95,0.8); }
