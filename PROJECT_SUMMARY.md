@@ -3,43 +3,36 @@
 ## 1. PROJECT OVERVIEW
 - **Project Name**: RakshaNav
 - **One-line Description**: A smart city safety and urban navigation ecosystem.
-- **Detailed Purpose**: RakshaNav provides secure, safe route navigation and crowdsourced hazard reporting for citizens, while supplying municipal authorities and enterprise fleet managers with real-time analytics to improve urban safety. 
-- **Problem Solved**: Overcoming unsafe navigation, disconnected civic reporting mechanisms, and lack of real-time infrastructure visibility.
-- **Target Users**: Citizens, Government (Municipal Operations), Enterprise (Fleet Managers), and Admins.
-- **Value Proposition**: Connects the public directly to municipal authorities through a unified platform, replacing fragmented legacy civic reporting tools.
-- **Current Implementation Status**: MVP / V1 (Production-Ready).
-- **Major Capabilities**: Safe route analysis (using Gemini AI), real-time live tracking with shareable links, civic hazard reporting with image analysis, and role-based operational dashboards.
+- **Detailed Purpose**: RakshaNav provides safe route navigation and crowdsourced hazard reporting for citizens, and supplies municipal authorities with real-time operational data.
+- **Problem Solved**: Overcoming unsafe navigation and disconnected civic reporting mechanisms.
+- **Target Users**: Citizens, Government (Municipal Operations), Enterprise (Fleet Managers - planned), and Admins (planned).
+- **Current Implementation Status**: Demo-ready MVP
+- **Major Capabilities**: Safe route analysis (via OSRM, Overpass API, Open-Meteo, and Gemini AI for explanation), real-time live tracking with shareable links, civic hazard reporting, and role-based operational dashboards.
 - **Status Key**: 
   - ✅ IMPLEMENTED: Functionality exists and is connected to the database.
-  - ⚠️ PARTIALLY IMPLEMENTED: UI exists with basic backend support but missing full features (e.g., enterprise features).
+  - ⚠️ PARTIALLY IMPLEMENTED: UI exists with basic backend support but missing full features.
   - ❌ PLANNED/NOT IMPLEMENTED: Stubs or placeholders exist.
 
 ## 2. USER ROLES
 The application supports four primary roles, defined in the `profiles` table:
 1. **Citizen**
-   - **Purpose**: Primary end-user consuming navigation and reporting hazards.
-   - **Accessible Features**: Safe Navigation, Gemini AI Assistant, Live Tracking, Report Hazard, SOS, Community Reports, Profile Settings.
-   - **Permissions**: Can read/write their own data, create incident reports, and trigger SOS.
+   - **Authentication**: Fully implemented.
+   - **Accessible Features**: Safe Navigation, Gemini AI Assistant, Live Tracking, Report Hazard, SOS (internal only), Community Reports, Profile Settings.
+   - **Permissions**: Can read/write their own data (`user_id = auth.uid()`).
 2. **Government**
-   - **Purpose**: Municipal officers responsible for infrastructure maintenance.
-   - **Accessible Features**: Command Center, Live Reports (Ward Monitoring and Analytics are partially implemented placeholders).
-   - **Permissions**: Can read all public hazard reports, update report statuses, and broadcast notifications.
-3. **Enterprise** (⚠️ Partially Implemented)
-   - **Purpose**: Fleet and employee commute managers.
-   - **Accessible Features**: Enterprise Dashboard (most sub-pages are placeholders).
-   - **Permissions**: Intended to manage organization employees and view fleet analytics.
+   - **Authentication**: Implemented via dynamic organization signup (`government_organizations`).
+   - **Accessible Features**: Command Center, Live Reports, Ward Monitoring (placeholder text removed, awaits V2 data).
+   - **Permissions**: Approved members can view public hazard reports and update report statuses.
+3. **Enterprise** (❌ Not Implemented)
+   - **Status**: The `/enterprise` route exists, but all major views (Live Operations, Commute Analytics, Alerts) render empty `Placeholders.jsx` components.
 4. **Admin** (❌ Not Implemented)
-   - **Purpose**: Superuser for the RakshaNav system.
-   - **Accessible Features**: Admin Dashboard (placeholders).
-   - **Permissions**: Full system access (intended).
+   - **Status**: The `/admin` route exists, but all views render empty `Placeholders.jsx` components.
 
 ## 3. APPLICATION ARCHITECTURE
-- **Frontend**: React 18 SPA (Single Page Application) built with Vite. Uses Tailwind CSS for styling and Framer Motion for animations. Zustand is available but Context API is primarily used for Auth and AI.
-- **Backend**: 
-  - **Primary**: Supabase (BaaS) providing PostgreSQL, GoTrue Auth, Realtime WebSocket subscriptions, and Row Level Security (RLS).
-  - **Custom Express Server**: Located in `/server`, used to proxy requests to Google Gemini AI API and external APIs to protect API keys.
-- **Maps & Routing**: MapLibre GL JS (via `react-map-gl`), Leaflet (via `react-leaflet`), and OSRM (Open Source Routing Machine) for route calculations.
-- **AI Services**: Google Gemini AI (`gemini-2.5-flash` with fallback to `gemini-1.5-flash`) utilized for conversational safety assistance, route safety analysis, and hazard image classification.
+- **Frontend**: React 18 SPA built with Vite. Uses Tailwind CSS for styling and Context API for state management.
+- **Backend (Database)**: Supabase providing PostgreSQL, GoTrue Auth, Realtime WebSockets, and Row Level Security (RLS).
+- **Backend (API)**: A custom Express.js server (`/server`) is strictly required in production to proxy requests to Google Gemini AI API, Open-Meteo, and Overpass API to protect API keys and handle complex routing logic.
+- **Maps & Routing**: MapLibre GL JS (via `react-map-gl`), Leaflet (via `react-leaflet`), and OSRM (Open Source Routing Machine).
 
 ## 4. TECH STACK
 | Technology | Purpose | Where Used |
@@ -51,153 +44,150 @@ The application supports four primary roles, defined in the `profiles` table:
 | MapLibre GL & Leaflet | Maps & Visualization | SafeNavigation, LiveTracking, Dashboards |
 | Google Generative AI | AI Intelligence | `server/services/geminiService.js` |
 | Express.js | Backend Proxy / API | `server/index.js` |
-| React Router DOM | Routing | `src/App.jsx`, `src/components/ProtectedRoute.jsx` |
-| Framer Motion | Animations | UI Overlays, Loaders |
-| Lucide React | Icons | Entire Frontend |
+| React Router DOM | Routing | `src/App.jsx` |
+| OSRM | Route Generation | `server/controllers/routeController.js` |
+| Overpass API | POI Data (Police, Hospitals) | `server/services/routeFeatureService.js` |
+| Open-Meteo | Weather Data | `server/controllers/routeController.js` |
 
 ## 5. DIRECTORY STRUCTURE
-- `/src/components/`: Reusable UI elements (Map components, ProtectedRoute, Navbar, Sidebar).
+- `/src/components/`: Reusable UI elements (ProtectedRoutes, Navbar, Sidebar).
 - `/src/contexts/`: React Context providers (`AuthContext.jsx`, `AIContext.jsx`).
 - `/src/hooks/`: Custom React hooks (`useGemini.js`).
 - `/src/layouts/`: Dashboard wrapper layouts.
-- `/src/lib/`: Core library initialization (`supabase.js`).
-- `/src/pages/`: Route entry points, organized by role (`citizen/`, `government/`, `enterprise/`, `admin/`).
-- `/src/services/`: Supabase database interaction layer (`hazardService.js`, `liveTrackingService.js`, `emergencyService.js`, `governmentService.js`).
-- `/server/`: Express backend containing AI controllers (`aiController.js`), routing controllers, and Gemini logic (`geminiService.js`).
+- `/src/pages/`: Route entry points, organized by role.
+- `/src/services/`: Supabase database interaction layer.
+- `/server/`: Express backend containing routing logic (`routeController.js`), safety algorithms (`SafetyEngine.js`), and Gemini proxy (`geminiService.js`).
 - `/supabase/migrations/`: SQL definitions for database schema and Row Level Security.
 
 ## 6. ROUTING
 - **Configuration**: `src/App.jsx`
 - **Public Routes**: `/login`, `/signup`, `/government-signup`, `/live/:token`
-- **Protected Catch-all**: `/onboarding` (forces incomplete profiles to select a role)
-- **Role-Based Protected Routes**:
-  - `['citizen']`: `/dashboard`, `/dashboard/navigation`, `/dashboard/report`, `/dashboard/tracking`, `/dashboard/emergency`
-  - `['government']`: `/government`, `/government/reports`, `/government/reports/:id`
-  - `['enterprise']`: `/enterprise` (and placeholders)
-  - `['admin']`: `/admin` (and placeholders)
-- **Redirection**: `/` redirects to `/dashboard`. Unauthorized role access redirects to `/access-denied`.
+- **Protected Onboarding**: `/onboarding`
+- **Citizen Routes**: `/dashboard`, `/dashboard/navigation`, `/dashboard/report`, `/dashboard/tracking`, `/dashboard/emergency`
+- **Government Routes**: `/government`, `/government/reports`, `/government/reports/:id`
+- **Enterprise Routes**: `/enterprise` (redirects to Placeholders)
+- **Admin Routes**: `/admin` (redirects to Placeholders)
+
+*Note: Previous AI tool references to obsolete routes like `/navigate` have been corrected to `/dashboard/navigation`.*
 
 ## 7. AUTHENTICATION
-- **Implementation**: Supabase GoTrue Auth.
-- **Methods**: Email/Password. Google OAuth is configured via Supabase but the frontend primarily utilizes email/password in `Login.jsx` and `Signup.jsx`.
-- **Flow**: User signs up -> Supabase `auth.users` row created -> Postgres Trigger automatically creates a `public.profiles` row with role `unassigned` -> User logs in -> Redirected to `/onboarding` -> User selects role -> Profile updated -> Redirected to respective dashboard.
-- **Session Management**: Supabase handles local storage session persistence automatically. `AuthContext.jsx` listens to `onAuthStateChange`.
+- **Implementation**: Supabase GoTrue Auth (Email/Password).
+- **OAuth**: Google OAuth is configured in Supabase but not implemented in the frontend UI.
+- **Flow**: User signs up -> `auth.users` row created -> Postgres Trigger creates a `public.profiles` row with role `unassigned` -> User logs in -> Redirected to `/onboarding` -> User selects role -> Profile updated -> Redirected to dashboard.
+- **Session**: Handled automatically via local storage by Supabase.
 
 ## 8. USER PROFILE SYSTEM
 - **Entities**: 
-  - `auth.users` (Supabase managed, inaccessible to frontend directly).
+  - `auth.users` (Supabase managed).
   - `public.profiles` (id references `auth.users(id)`).
-- **Government Integration**: Government users are tied to `government_organizations` via the `government_members` table.
-- **Known Limitations**: The `public.profiles` creation relies on a database trigger (`on_auth_user_created`). If this trigger fails or is missing, the frontend falls back to `unassigned` and the user gets stuck on onboarding due to an RLS failure preventing frontend inserts.
+- **Trigger**: Relies on `on_auth_user_created` trigger in Postgres.
+- **Status**: Tested and functional for Citizens and Government.
 
 ## 9. DATABASE SCHEMA
 - **`profiles`**: Stores `id` (UUID), `role`, `full_name`, `phone`, `profile_completed`.
-- **`incident_reports`**: Stores citizen hazard reports. Includes `category`, `description`, `latitude`, `longitude`, `status`, `priority`, `image_url`.
-- **`incident_updates`**: Timeline of actions taken on an incident report by government officials.
-- **`sos_events`**: Active emergencies triggered by users, containing device info and location.
-- **`live_sessions`** / **`live_locations`**: Tracks active shareable GPS telemetry streams.
-- **`notifications`** / **`notification_reads`**: Global broadcast system and direct user alerts.
+- **`incident_reports`**: Stores citizen hazard reports. Includes `category`, `description`, `lat`, `lng`, `status`, `image_url`.
+- **`incident_updates`**: Timeline of actions taken on reports.
+- **`sos_events`**: Active emergencies triggered by users.
+- **`live_sessions`** / **`live_locations`**: Tracks active shareable GPS telemetry.
+- **`notifications`** / **`notification_reads`**: Global broadcast system and direct alerts.
 - **`government_organizations`** / **`government_members`**: RBAC for municipal authorities.
 - **`emergency_contacts`** / **`medical_profile`**: Citizen SOS data.
 
 ## 10. ROW LEVEL SECURITY (RLS)
-- **Implementation status**: Enabled on all primary tables.
-- **General Pattern**: 
-  - **Citizens**: Allowed to `SELECT`, `INSERT`, `UPDATE` their own data where `user_id = auth.uid()`.
-  - **Government**: Authorized to `SELECT` and `UPDATE` global civic tables (like `incident_reports`) via the `is_government_user()` SQL function check.
-- **Dangerous Policies**: To facilitate cross-functional reporting without complex joins in RLS, some policies allow public inserts (e.g. `incident_reports` allows authenticated inserts without strictly checking roles, assuming frontend hides it). 
-- **Database Enforced**: Yes, authorization relies heavily on Supabase RLS.
+- **Implementation**: Enabled on all primary tables.
+- **Citizen Policies**: Citizens are permitted to `INSERT` into `incident_reports`, but constrained by `auth.uid() = user_id` (or anonymous).
+- **Government Policies**: Authorized to `UPDATE` `incident_reports` via the `government_members` role checks.
+- **Security Check**: The application does not rely on frontend-only authorization. Supabase strictly enforces `user_id` constraints on all inserts and updates.
 
 ## 11. CITIZEN FEATURES
 - ✅ **Dashboard**: Overview of quick actions and active metrics.
-- ✅ **Safe Navigation**: OSRM-based routing with map overlays.
+- ✅ **Safe Navigation**: OSRM-based routing with real safety scoring.
 - ✅ **AI Safety Assistant**: Chatbot capable of navigating the app.
 - ✅ **Live Tracking**: Real-time GPS sharing with generated shortlinks.
-- ✅ **Report Hazard**: Form to submit issues with geocoding and image URLs.
-- ⚠️ **Trip History / Saved Places**: UI exists, database integration is minimal/mocked.
-- ✅ **Emergency/SOS**: Button to trigger critical system alerts.
+- ✅ **Report Hazard**: Form to submit issues to the `incident_reports` table.
+- ⚠️ **Trip History / Saved Places**: UI exists, database integration is present but minimally utilized.
+- ✅ **Emergency/SOS**: Button to trigger internal system alerts (no external dispatch).
 
 ## 12. SAFE NAVIGATION
 - **Geocoding**: Nominatim (OSM).
-- **Routing**: OSRM (Open Source Routing Machine).
-- **Safety Scoring**: The frontend fetches OSRM routes, then asks the `/server` (`analyzeSingleRoute`) to generate a textual safety summary based on metrics. 
-- **Variables**: Currently, the metrics (lighting, police presence, historical incidents) passed into the Gemini prompt are heavily simulated or derived from static heuristics based on distance and region, rather than real-time spatial joins on the DB.
+- **Routing**: OSRM.
+- **Safety Scoring**: 
+  - The Express backend (`SafetyEngine.js`) calculates a normalized score out of 100 based on exact weights.
+  - **Inputs**: Uses the Overpass API for police/hospital proximity (`routeFeatureService.js`), Open-Meteo for live weather, and Supabase for active hazard reports near the polyline.
+  - **Status**: Fully implemented. Scoring is data-driven, NOT simulated or hardcoded.
+  - **AI Explanation**: The computed metrics are fed to Gemini AI *only* to generate a conversational explanation of the final score, not to calculate the score itself.
 
 ## 13. GEMINI AI
 - **Model**: `gemini-2.5-flash` (fallback to `gemini-1.5-flash`).
-- **Integration**: Accessed strictly through the Node/Express backend (`/server/services/geminiService.js`) to protect `GEMINI_API_KEY`.
+- **Integration**: Accessed strictly through the Node/Express backend to protect `GEMINI_API_KEY`.
 - **Features**: 
-  - **Copilot**: Injected with a system prompt capable of outputting XML tags (`<action type="navigate" target="/dashboard/navigation" />`) which the frontend parses to trigger React Router navigation.
-  - **Route Analysis**: Generates short safety summaries for given route metrics.
-  - **Image Analysis**: Capable of reading base64 images to auto-classify hazards.
-- **Error Handling**: Implements deterministic text fallbacks if the API quota is exceeded or the stream fails.
+  - **Copilot**: Outputs XML tags (e.g. `<action type="navigate" target="/dashboard/navigation" />`) to trigger frontend React Router changes.
+  - **Route Analysis**: Generates short safety summaries based on factual backend metrics.
 
 ## 14. REPORTING SYSTEM
 - **Flow**: ✅ Implemented.
   1. Citizen creates report via `/dashboard/report`.
-  2. Frontend pushes to `incident_reports` via `hazardService.js`.
-  3. Government views it in `/government/reports` via `governmentService.js`.
-  4. Government updates status (e.g., to "Resolved").
-  5. System inserts row into `incident_updates`.
-  6. System creates a row in `notifications` alerting the original Citizen.
+  2. Data is inserted to `incident_reports`.
+  3. Government reviews on `/government/reports`.
+  4. Government updates status to "Resolved".
+  5. Realtime database trigger updates the citizen.
 
 ## 15. EMERGENCY / SOS
 - **Trigger**: User hits SOS button.
-- **Flow**: ✅ Implemented.
+- **Flow**: ⚠️ Partially Implemented.
   1. Starts a Live Tracking Session (generates token).
   2. Inserts record into `sos_events`.
   3. Inserts `critical` alert into `notifications` table containing the user's location and tracking link.
-- **Limitation**: Actual Twilio SMS / WhatsApp dispatch is NOT implemented; it stops at the database notification level.
+- **Critical Limitation**: External dispatch to Twilio SMS, WhatsApp, or Police APIs is **NOT IMPLEMENTED**. It relies solely on the internal database notification system.
 
 ## 16. NOTIFICATIONS
 - **Architecture**: A central `notifications` table handles direct messages (`recipient_type = 'user'`) and broadcasts (`recipient_type = 'all'`).
-- **Read State**: Tracked via `notification_reads` junction table for broadcasts.
-- **Realtime**: `notificationService.js` subscribes to PostgreSQL changes and updates the UI instantly.
+- **Realtime**: `notificationService.js` subscribes to PostgreSQL changes and updates the UI instantly using Supabase Realtime.
 
 ## 17. GOVERNMENT SYSTEM
-- ✅ **Command Center**: Fetches real-time KPIs (Active Reports, Avg Resolution Time, Critical Issues) directly from the `incident_reports` table.
-- ✅ **Live Reports**: Kanban/List view to process citizen complaints and update statuses.
-- ⚠️ **Ward Monitoring / Infrastructure / Analytics**: Honest empty states or static placeholders for V2.
+- ✅ **Command Center**: Fetches real-time KPIs directly from the `incident_reports` table (simulated/hardcoded data has been purged).
+- ✅ **Live Reports**: Functional Kanban board to process citizen complaints.
+- ❌ **Ward Monitoring / Infrastructure / Analytics**: Render empty states or placeholders.
 
 ## 18. ENTERPRISE SYSTEM
-- ❌ **Status**: Barely implemented. The `/enterprise` route exists, but all major views (Live Operations, Commute Analytics, Alerts) render empty `Placeholders.jsx` components.
+- ❌ **Status**: Not implemented. Renders placeholders.
 
 ## 19. ADMIN SYSTEM
-- ❌ **Status**: Not implemented. Renders `Placeholders.jsx`.
+- ❌ **Status**: Not implemented. Renders placeholders.
 
 ## 20. MAP SYSTEM
-- **Library**: MapLibre GL JS (Mapbox fork) and React Leaflet.
-- **Map Tiles**: CartoDB Dark Matter (Raster tiles).
-- **Route Rendering**: GeoJSON LineStrings fetched from OSRM and drawn on MapLibre sources.
-- **Markers**: Custom HTML DOM markers using Lucide React icons.
+- **Libraries**: MapLibre GL JS and React Leaflet.
+- **Map Tiles**: CartoDB Dark Matter.
 
 ## 21. EXTERNAL SERVICES
-- **Supabase**: Primary Database and Auth (Required).
-- **Google Gemini API**: AI Services (Required).
-- **OSRM**: Routing (Public API used, no key needed).
-- **Nominatim**: Geocoding (Public API used, no key needed).
+- **Supabase**: Primary Database and Auth.
+- **Google Gemini API**: AI Services.
+- **OSRM**: Route generation.
+- **Nominatim**: Geocoding.
+- **Overpass API**: Infrastructure safety data (police, hospitals).
+- **Open-Meteo**: Weather data.
 
 ## 22. ENVIRONMENT VARIABLES
-- `VITE_SUPABASE_URL`: Supabase project URL (Frontend).
-- `VITE_SUPABASE_ANON_KEY`: Supabase public anon key (Frontend).
-- `GEMINI_API_KEY`: Google AI Key (Backend).
-*(Note: Ensure frontend vars begin with `VITE_`)*
+- `VITE_SUPABASE_URL`: Supabase project URL (Frontend & Backend).
+- `VITE_SUPABASE_ANON_KEY`: Supabase public anon key (Frontend & Backend).
+- `GEMINI_API_KEY`: Google AI Key (Backend only).
 
 ## 23. DEPLOYMENT
-- **Scripts**: 
-  - `npm run dev`: Uses `concurrently` to run Vite (port 5173) and Express (port 3001).
-  - `npm run build`: Vite production build.
-- **Architecture**: Vite config proxies `/api` to `http://localhost:3001` during development. In production, this requires deploying the Express app and the static React build separately, or running them together on a Node server.
+- **Architecture**: The application requires TWO running servers in production:
+  1. The static React build (Vite).
+  2. The Express.js backend (`/server/index.js`) to process routes, execute Overpass queries, and securely call Gemini.
+- **Status**: The repository supports local development (`npm run dev:client` + `npm run dev:server`). A production deployment must host both services.
 
 ## 24. CURRENT KNOWN ISSUES
+- **HIGH**: External SOS Dispatch is missing. SOS currently only notifies users internally.
+- **HIGH**: Production deployment requires hosting a custom Express server alongside the React frontend, adding infrastructure complexity.
+- **MEDIUM**: Enterprise and Admin roles are incomplete placeholders.
 - **LOW**: The `liveTrackingService.js` relies on `navigator.geolocation`, which requires HTTPS in production.
-- **LOW**: Safe Navigation uses static/derived values for safety metrics rather than complex spatial DB queries.
-- **LOW**: Enterprise and Admin roles are incomplete.
 
 ## 25. SECURITY AUDIT SUMMARY
-- **API Keys**: Gemini key is safely isolated in the backend. Supabase anon key is safely public.
-- **RLS**: Row Level Security is active, preventing arbitrary data manipulation. Government queries rely on secure database-level role verification.
-- **Authorization**: `ProtectedRoute.jsx` successfully prevents unauthorized access to role-specific dashboards.
+- **API Keys**: Gemini key is safely isolated in the backend. 
+- **RLS**: Row Level Security is actively enforcing `user_id` constraints, preventing horizontal data escalation.
+- **Authorization**: Role-based access control successfully blocks unauthorized users from accessing the `/government` and `/dashboard` routes.
 
 ## 26. DATA FLOW DIAGRAMS
 
@@ -218,27 +208,35 @@ sequenceDiagram
 
 ## 27. IMPORTANT FUNCTIONS
 - `useGemini.js -> sendMessage`: Orchestrates the AI chatbot, streaming responses, and parsing `<action type="navigate">` tags.
-- `emergencyService.js -> triggerSOS`: Instantiates a live tracking session and inserts a critical notification.
+- `SafetyEngine.js -> calculateRouteSafety`: Calculates the data-driven safety score using real external datasets.
 - `AuthContext.jsx -> fetchProfile`: Resolves the user's role and dictates the routing flow upon login.
-- `governmentService.js -> getDashboardKPIs`: Parses the entire `incident_reports` table to calculate dynamic municipal response times and hotspot counts.
 
 ## 28. CURRENT FEATURE MATRIX
 | Feature | Citizen | Enterprise | Government | Admin |
 |---|---|---|---|---|
 | Authentication | ✅ | ✅ | ✅ | ✅ |
 | Role Onboarding | ✅ | ✅ | ✅ | ✅ |
-| Dashboards | ✅ | ⚠️ | ✅ | ❌ |
+| Dashboards | ✅ | ❌ | ✅ | ❌ |
 | Safe Navigation | ✅ | ❌ | ❌ | ❌ |
 | Hazard Reporting | ✅ | ❌ | ✅ | ❌ |
 | AI Assistant | ✅ | ❌ | ❌ | ❌ |
 | Live Tracking | ✅ | ❌ | ❌ | ❌ |
-| Emergency SOS | ✅ | ❌ | ❌ | ❌ |
+| Emergency SOS | ⚠️ | ❌ | ❌ | ❌ |
 
 ## 29. DEVELOPMENT GUIDELINES
-- **Supabase Client**: Always use `import { supabase } from '../lib/supabase'` instead of initializing new clients.
-- **AI Routing**: When adding new routes, ensure `useGemini.js` fallback routing is updated if the AI suggests navigating to them.
-- **Data Integrity**: Never remove RLS policies to solve permission issues. Always write a proper policy or update the user's role in the DB.
-- **Placeholders**: If completing Enterprise or Admin roles, start by replacing the exports in `Placeholders.jsx` with real components.
+- **Backend Dependency**: Do not attempt to call Gemini or Overpass API directly from the React frontend to avoid exposing secrets or exceeding browser limitations.
+- **Placeholders**: If completing Enterprise or Admin roles, start by replacing the exports in `Placeholders.jsx`.
 
 ## 30. FINAL PROJECT STATUS
-RakshaNav V1 is **Production Ready** for its core Citizen and Government pathways. The platform successfully bridges the gap between citizens reporting issues (and navigating safely) and government officials tracking and resolving those issues in real-time. Technical debt primarily resides in the stubbed-out Enterprise and Admin modules, and the simulated data passed into the AI routing model. The immediate next step for V2 would be building out the Enterprise dashboard and deploying the backend Edge functions for SMS dispatch.
+RakshaNav is a **Demo-Ready MVP**. The core Citizen and Government pathways—specifically safe navigation, AI assistance, live tracking, and civic reporting—are fully functional and powered by real data sources. However, the application is not "production-ready" because it lacks critical features such as external SOS dispatch (Twilio/SMS integration) and requires the completion of the Enterprise and Admin dashboards.
+
+---
+
+## Audit Metadata
+- **Audit Date**: 2026-08-08
+- **Overall Project Status**: Demo-ready MVP
+- **Core Production-Ready Areas**: Authentication, Role-based Routing, Safe Navigation Engine, Database RLS, Citizen/Government Reporting Flow.
+- **Partially Implemented Areas**: Internal SOS Notifications, Trip History.
+- **Not Implemented Areas**: External SMS Dispatch, Enterprise Dashboard, Admin Dashboard.
+- **High-Priority Findings**: The Express backend must be continuously hosted alongside the frontend for Gemini and safety metrics to function.
+- **Recommended Next Steps**: Implement Twilio/WhatsApp integration in the backend for SOS dispatch, and build out the Enterprise fleet views.
