@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import UserView from '../components/UserView';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 // Import our new live services
 import { locationService } from '../services/locationService';
@@ -18,9 +18,14 @@ import { SafetyEngine } from '../lib/SafetyEngine';
 
 export default function CitizenDashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   
   // Real Data States
   const [loading, setLoading] = useState(true);
+  const [gpsState, setGpsState] = useState('LOADING'); // LOADING, AVAILABLE, DENIED, ERROR
+  const [havenState, setHavenState] = useState('LOADING'); // LOADING, FOUND, EMPTY, ERROR
+  const lastSearchedRef = React.useRef(null);
+  
   const [errorMsg, setErrorMsg] = useState(null);
   
   const [liveLocation, setLiveLocation] = useState(null);
@@ -29,6 +34,8 @@ export default function CitizenDashboard() {
   const [weatherData, setWeatherData] = useState(null);
   const [safetyMetrics, setSafetyMetrics] = useState(null);
   const [nearbyAlerts, setNearbyAlerts] = useState([]);
+  const [jurisdiction, setJurisdiction] = useState(null);
+  const [jurisdictionLoading, setJurisdictionLoading] = useState(false);
   
   // Real stats from Supabase
   const [reports, setReports] = useState([]);
@@ -39,37 +46,78 @@ export default function CitizenDashboard() {
   const [showCommunity, setShowCommunity] = useState(true);
   const [showStreetlights, setShowStreetlights] = useState(false);
   const [showHavens, setShowHavens] = useState(true);
+  const [showJurisdictions, setShowJurisdictions] = useState(false);
 
   const fetchLiveData = async () => {
-    setLoading(true);
-    setErrorMsg(null);
+    // Only set the global loading state if we don't have location yet to avoid flashing UI on background refetches
+    if (!liveLocation) setLoading(true);
+    
+    let position;
     try {
-      // 1. Get Live GPS
-      const position = await locationService.getCurrentPosition();
+      if (!liveLocation) setGpsState('LOADING');
+      position = await locationService.getCurrentPosition();
       setLiveLocation(position);
+      setGpsState('AVAILABLE');
+      setErrorMsg(null);
+    } catch (err) {
+      console.warn('GPS failed:', err);
+      if (err.message && err.message.toLowerCase().includes('denied')) {
+        setGpsState('DENIED');
+      } else {
+        setGpsState('ERROR');
+      }
+      setLoading(false);
+      return; // Halt if GPS fails; cannot fetch havens or other location-based data
+    }
 
-      // 2. Fetch context data and Supabase data in parallel
-      const [address, havens, weather, reportsData, tripsData] = await Promise.allSettled([
+    // Determine if we need to fetch havens based on distance moved (>200m)
+    const lastLoc = lastSearchedRef.current;
+    let shouldFetchHavens = true;
+    if (lastLoc && nearestHaven) {
+      const dist = placesService.calculateDistance(lastLoc.lat, lastLoc.lng, position.lat, position.lng);
+      if (dist < 0.2) {
+        shouldFetchHavens = false;
+      }
+    }
+
+    try {
+      const fetchPromises = [
         locationService.reverseGeocode(position.lat, position.lng),
-        placesService.getNearbyHavens(position.lat, position.lng),
         weatherService.getWeather(position.lat, position.lng),
         supabase.from('reports').select('*').eq('user_id', user?.id).gte('created_at', new Date(new Date().setHours(0,0,0,0)).toISOString()),
         supabase.from('trips').select('*').eq('user_id', user?.id).gte('started_at', new Date(new Date().setHours(0,0,0,0)).toISOString())
-      ]);
+      ];
+      
+      let havensPromise = Promise.resolve({ status: 'skipped' });
+      if (shouldFetchHavens) {
+         setHavenState('LOADING');
+         havensPromise = placesService.getNearbyHavens(position.lat, position.lng)
+           .then(res => ({ status: 'fulfilled', value: res }))
+           .catch(err => ({ status: 'rejected', reason: err }));
+      }
 
-      let havenCount = 0;
+      const [address, weather, reportsData, tripsData] = await Promise.allSettled(fetchPromises);
+      const havens = await havensPromise;
+
+      if (shouldFetchHavens) {
+        lastSearchedRef.current = { lat: position.lat, lng: position.lng };
+        if (havens.status === 'fulfilled' && havens.value && havens.value.length > 0) {
+          setNearestHaven(havens.value[0]);
+          setHavenState('FOUND');
+        } else if (havens.status === 'fulfilled') {
+          setNearestHaven(null);
+          setHavenState('EMPTY');
+        } else {
+          setNearestHaven(null);
+          setHavenState('ERROR');
+        }
+      }
+
       let weatherCode = 0;
       let windSpeed = 0;
 
       if (address.status === 'fulfilled') {
         setAddressData(address.value);
-      }
-      
-      if (havens.status === 'fulfilled' && havens.value.length > 0) {
-        setNearestHaven(havens.value[0]);
-        havenCount = havens.value.length;
-      } else {
-        setNearestHaven(null);
       }
 
       if (weather.status === 'fulfilled') {
@@ -115,15 +163,30 @@ export default function CitizenDashboard() {
       }
       setNearbyAlerts(realAlerts);
 
+      // 4. Fetch Police Jurisdiction
+      let currentJurisdiction = null;
+      try {
+        setJurisdictionLoading(true);
+        const { data: jData, error: jError } = await supabase.rpc('get_jurisdiction_by_location', { lat: position.lat, lng: position.lng });
+        if (!jError && jData && jData.length > 0) {
+          currentJurisdiction = jData[0];
+        }
+      } catch (e) {
+        console.warn('Failed to fetch jurisdiction', e);
+      } finally {
+        setJurisdictionLoading(false);
+      }
+      setJurisdiction(currentJurisdiction);
+
       // Compute Live Safety Score using V2 Engine
       const hour = new Date().getHours();
       const isNight = hour < 6 || hour > 18;
       
       const infrastructure = {
-        police: havens.status === 'fulfilled' && havens.value.some(h => h.type === 'Police') ? 1 : 0,
-        hospitals: havens.status === 'fulfilled' && havens.value.some(h => h.type === 'Hospital') ? 1 : 0,
-        commercial: 10, // Default baseline for point safety
-        parks: 0
+        police: currentJurisdiction ? 1 : null, // Not zero, null if unknown
+        hospitals: nearestHaven && nearestHaven.type === 'hospital' ? 1 : null,
+        commercial: null, 
+        parks: null
       };
 
       const weatherObj = weather.status === 'fulfilled' ? {
@@ -133,8 +196,8 @@ export default function CitizenDashboard() {
       } : { isRaining: false, isFoggy: false, windSpeed: 0 };
 
       const confidenceMetrics = {
-        gps: true,
-        infrastructure: havens.status === 'fulfilled',
+        gps: gpsState === 'AVAILABLE',
+        infrastructure: havenState === 'FOUND',
         weather: weather.status === 'fulfilled',
         reports: supabaseSuccess,
         routing: true, // Not routing
@@ -169,6 +232,35 @@ export default function CitizenDashboard() {
     fetchLiveData();
   };
 
+  const handleNavigateToHaven = () => {
+    if (nearestHaven) {
+      navigate('/dashboard/navigation', {
+        state: {
+          origin: liveLocation ? 'Current Location' : '',
+          destination: nearestHaven.name,
+          autoTrigger: true
+        }
+      });
+    }
+  };
+
+  const formatHavenDistance = (km) => {
+    if (km < 1) return `${Math.round(km * 1000)} m away`;
+    return `${km.toFixed(1)} km away`;
+  };
+
+  const getHavenIcon = (type) => {
+    switch (type?.toLowerCase()) {
+      case 'police': return '🛡 Police Station';
+      case 'hospital': return '🏥 Hospital';
+      case 'clinic': return '⚕ Clinic';
+      case 'fire_station': return '🚒 Fire Station';
+      case 'pharmacy': return '💊 Pharmacy';
+      case 'atm': return '💳 ATM';
+      default: return type ? type.charAt(0).toUpperCase() + type.slice(1) : 'Safe Haven';
+    }
+  };
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
@@ -196,33 +288,44 @@ export default function CitizenDashboard() {
             />
             <KpiCard 
               title="Current Location" 
-              value={addressData ? (addressData.address.suburb || addressData.address.city_district || 'Unknown') : 'N/A'}
-              subtitle={liveLocation ? `Accuracy: ±${Math.round(liveLocation.accuracy)}m` : 'Waiting for GPS'}
+              value={gpsState === 'AVAILABLE' && addressData ? (addressData.address.suburb || addressData.address.city_district || 'Unknown') : (gpsState === 'DENIED' ? 'Location denied' : 'Location unavailable')}
+              subtitle={gpsState === 'AVAILABLE' && liveLocation ? `Accuracy: ±${Math.round(liveLocation.accuracy)}m` : (gpsState === 'LOADING' ? 'Finding your location...' : 'Check permissions')}
               icon={<MapPin className="w-[18px] h-[18px] text-brand-blue" />} 
               trend="GPS"
               glow="rgba(59,130,246,0.15)"
-              loading={loading}
-              actionIcon={<RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />}
+              loading={gpsState === 'LOADING'}
+              actionIcon={<RefreshCw className={`w-3 h-3 ${gpsState === 'LOADING' ? 'animate-spin' : ''}`} />}
               onAction={fetchLiveData}
             />
             <KpiCard 
               title="Nearest Safe Haven" 
-              value={nearestHaven ? nearestHaven.name : 'No haven < 5km'}
-              subtitle={nearestHaven ? nearestHaven.type : 'N/A'}
+              value={
+                havenState === 'FOUND' && nearestHaven ? getHavenIcon(nearestHaven.type) :
+                havenState === 'EMPTY' ? 'No nearby safe locations' :
+                havenState === 'ERROR' ? 'Unable to load places' :
+                'Finding locations...'
+              }
+              subtitle={
+                havenState === 'FOUND' && nearestHaven ? `${nearestHaven.name} • ${formatHavenDistance(nearestHaven.distanceKm)}` :
+                havenState === 'EMPTY' ? 'No verified facilities found' :
+                havenState === 'ERROR' ? 'Check your connection' :
+                'Searching area...'
+              }
               icon={<Activity className="w-[18px] h-[18px] text-brand-orange" />} 
-              trend="OSM"
+              trend="Map Data"
               glow="rgba(249,115,22,0.15)"
-              loading={loading}
-              actionIcon={nearestHaven && <Navigation className="w-3 h-3" />}
+              loading={havenState === 'LOADING' || gpsState === 'LOADING'}
+              actionIcon={havenState === 'FOUND' && nearestHaven && <Navigation className="w-3 h-3" />}
+              onAction={handleNavigateToHaven}
             />
             <KpiCard 
-              title="Today's Activity" 
-              value={tripsCount > 0 ? `${tripsCount} Trips` : 'No trips yet'}
-              subtitle={`${reports.length} Reports`}
-              icon={<Star className="w-[18px] h-[18px] text-yellow-400" />} 
-              trend="Live DB"
-              glow="rgba(250,204,21,0.15)"
-              loading={loading}
+              title="Police Jurisdiction" 
+              value={jurisdiction ? jurisdiction.station_name : 'No data'}
+              subtitle={jurisdiction ? `Division: ${jurisdiction.division || 'N/A'}` : 'Data unavailable for this region'}
+              icon={<ShieldCheck className="w-[18px] h-[18px] text-brand-blue" />} 
+              trend="Official Data"
+              glow="rgba(59,130,246,0.15)"
+              loading={jurisdictionLoading || gpsState === 'LOADING'}
             />
           </div>
 
@@ -237,24 +340,30 @@ export default function CitizenDashboard() {
                   </span>
                 </div>
                 <div className="hidden lg:block w-px h-4 bg-white/20 mx-1"></div>
-                <div className="flex gap-1 lg:gap-2 w-full lg:w-auto mt-2 lg:mt-0">
+                <div className="flex gap-1.5 overflow-x-auto custom-scrollbar pb-1 lg:pb-0">
+                  <MapToggle active={showCommunity} onClick={() => setShowCommunity(!showCommunity)} label="Hazards" />
+                  <MapToggle active={showJurisdictions} onClick={() => setShowJurisdictions(!showJurisdictions)} label="Police Zones" />
                   <MapToggle active={showTraffic} onClick={() => setShowTraffic(!showTraffic)} label="Traffic" />
-                  <MapToggle active={showCommunity} onClick={() => setShowCommunity(!showCommunity)} label="Community" />
-                  <MapToggle active={showStreetlights} onClick={() => setShowStreetlights(!showStreetlights)} label="Lights" />
                 </div>
               </div>
-              <div className="flex flex-col gap-2 pointer-events-auto">
-                <MapBtn icon={<LocateFixed />} onClick={fetchLiveData} loading={loading} />
-                <MapBtn icon={<Maximize />} />
-                <MapBtn icon={<Layers />} />
-              </div>
+
             </div>
             
             <div className="absolute inset-0 z-0 bg-gray-900/80 flex items-center justify-center">
               {errorMsg ? (
                  <div className="text-red-400 font-mono text-[13px] bg-red-500/10 px-4 py-2 rounded-lg border border-red-500/20">{errorMsg}</div>
               ) : (
-                 <UserView onAddReport={handleAddReport} userReports={reports} isDashboard={true} liveLocation={liveLocation} />
+                 <UserView 
+                   onAddReport={handleAddReport} 
+                   userReports={reports} 
+                   isDashboard={true} 
+                   liveLocation={liveLocation}
+                   showTraffic={showTraffic}
+                   showCommunity={showCommunity}
+                   showStreetlights={showStreetlights}
+                   showJurisdictions={showJurisdictions}
+                   communityReports={nearbyAlerts}
+                 />
               )}
             </div>
             
@@ -324,8 +433,8 @@ export default function CitizenDashboard() {
             )}
 
             <div className="space-y-2 mt-2">
-              <SafetyMetric label="Environment" value={safetyMetrics ? `${Math.round(safetyMetrics.breakdown.emergency)}/100` : 'N/A'} color="text-brand-neonGreen" />
-              <SafetyMetric label="Lighting" value={safetyMetrics ? `${Math.round(safetyMetrics.breakdown.lighting)}/100` : 'N/A'} color="text-brand-blue" />
+              <SafetyMetric label="Environment" value={safetyMetrics && safetyMetrics.breakdown.emergency !== null ? `${Math.round(safetyMetrics.breakdown.emergency)}/100` : 'Insufficient data'} color={safetyMetrics && safetyMetrics.breakdown.emergency !== null ? "text-brand-neonGreen" : "text-gray-500"} />
+              <SafetyMetric label="Lighting" value={safetyMetrics && safetyMetrics.breakdown.lighting !== null ? `${Math.round(safetyMetrics.breakdown.lighting)}/100` : 'Insufficient data'} color={safetyMetrics && safetyMetrics.breakdown.lighting !== null ? "text-brand-blue" : "text-gray-500"} />
               <SafetyMetric label="Community Alerts" value={nearbyAlerts.length} color="text-brand-orange" />
               <SafetyMetric label="Weather" value={weatherData ? 'Clear' : 'N/A'} color="text-brand-blue" />
               <SafetyMetric label="Confidence" value={safetyMetrics ? `${safetyMetrics.confidence}%` : 'N/A'} color="text-yellow-400" />
@@ -401,7 +510,7 @@ export default function CitizenDashboard() {
 
 function KpiCard({ title, value, subtitle, icon, trend, glow, loading, isScore, scoreValue, actionIcon, onAction }) {
     return (
-    <div className="glass-panel p-6 hover-lift flex flex-col gap-3 h-[180px] relative group overflow-hidden justify-between">
+    <div className="glass-panel p-6 hover-lift flex flex-col gap-3 h-full min-h-[160px] relative group overflow-hidden justify-between">
       <div 
         className="absolute -right-8 -top-8 w-32 h-32 rounded-full blur-[40px] opacity-30 group-hover:opacity-50 transition-opacity"
         style={{ backgroundColor: glow }}
@@ -409,10 +518,10 @@ function KpiCard({ title, value, subtitle, icon, trend, glow, loading, isScore, 
       
       <div className="z-10 flex flex-col gap-2">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-white/5 rounded-[12px] border border-white/10 shadow-inner backdrop-blur-md">
+          <div className="p-2.5 bg-white/5 rounded-[12px] border border-white/10 shadow-inner backdrop-blur-md shrink-0">
             {icon}
           </div>
-          <h4 className="text-[13px] text-gray-300 font-medium tracking-wide capitalize">{title}</h4>
+          <h4 className="text-[13px] text-gray-300 font-medium tracking-wide capitalize leading-tight">{title}</h4>
         </div>
         
         {loading ? (
@@ -427,10 +536,15 @@ function KpiCard({ title, value, subtitle, icon, trend, glow, loading, isScore, 
                  </svg>
                </div>
              )}
-             <div className="text-[20px] font-display font-bold text-white tracking-tight leading-none whitespace-normal break-words" style={{ fontSize: value.toString().length > 15 ? '16px' : '22px' }}>{value}</div>
+             <div 
+               title={value}
+               className="text-[20px] font-display font-bold text-white tracking-tight leading-tight line-clamp-2"
+             >
+               {value}
+             </div>
            </div>
         )}
-        <div className="text-[12px] text-gray-400 whitespace-normal break-words">{subtitle}</div>
+        <div className="text-[12px] text-gray-400 whitespace-normal line-clamp-2">{subtitle}</div>
       </div>
 
       <div className="flex justify-between items-end z-10">

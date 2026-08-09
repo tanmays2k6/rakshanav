@@ -145,7 +145,7 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
       { label: 'Ward Monitoring', icon: Users, path: '/government/ward' },
       { label: 'Infrastructure', icon: Bot, path: '/government/infrastructure' },
       { label: 'Notifications', icon: Bell, path: '/government/notifications' },
-      { label: 'Analytics', icon: History, path: '/government/analytics' }
+      { label: 'Crime Analytics', icon: History, path: '/government/analytics' }
     ],
     admin: [
       { label: 'System Overview', icon: Activity, path: '/admin' },

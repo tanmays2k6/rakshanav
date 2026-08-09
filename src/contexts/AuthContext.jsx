@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext()
@@ -8,109 +8,167 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [role, setRole] = useState(null)
   const [profileCompleted, setProfileCompleted] = useState(false)
+  
+  // loading is for the core Auth session
   const [loading, setLoading] = useState(true)
+  // profileLoading is for the secondary Profile fetch
   const [profileLoading, setProfileLoading] = useState(true)
+  
+  const profileSubscriptionRef = useRef(null)
 
   useEffect(() => {
-    let profileSubscription = null;
+    let mounted = true;
 
-    // Get active session on load
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        setProfileLoading(true)
-        fetchProfile(session.user.id)
-        profileSubscription = subscribeToProfile(session.user.id)
-      } else {
-        setLoading(false)
-        setProfileLoading(false)
-      }
-    }).catch(err => {
-      console.error('[AuthContext] getSession error:', err);
-      setLoading(false);
-      setProfileLoading(false);
-    })
+    const setupSubscription = (userId) => {
+      if (profileSubscriptionRef.current) return;
+      profileSubscriptionRef.current = supabase
+        .channel(`public:profiles:${userId}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${userId}` },
+          (payload) => {
+            if (payload.new) {
+              setProfile(payload.new);
+              setRole(payload.new.role);
+              setProfileCompleted(payload.new.profile_completed || false);
+            }
+          }
+        )
+        .subscribe();
+    };
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        setProfileLoading(true)
-        fetchProfile(session.user.id)
-        if (!profileSubscription) profileSubscription = subscribeToProfile(session.user.id)
-      } else {
-        setRole(null)
-        setProfile(null)
-        setProfileCompleted(false)
-        setLoading(false)
-        setProfileLoading(false)
-        if (profileSubscription) {
-          supabase.removeChannel(profileSubscription)
-          profileSubscription = null
-        }
-      }
-    })
-
-    return () => {
-      subscription.unsubscribe()
-      if (profileSubscription) supabase.removeChannel(profileSubscription)
-    }
-  }, [])
-
-  const fetchProfile = async (userId) => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single()
+    const fetchProfile = async (sessionUser) => {
+      if (!sessionUser) return;
       
-      if (error) {
-        if (error.code === 'PGRST116') {
-          // Profile not found - likely the trigger failed or RLS prevented insert.
-          console.warn('[AuthContext] Profile not found for user. Will initialize as unassigned.');
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', sessionUser.id)
+          .single();
+        
+        if (error) {
+          if (error.code === 'PGRST116') {
+            console.warn('[AuthContext] Profile not found. Safely initializing profile for user:', sessionUser.id);
+            // Profile is legitimately missing, we must safely create it
+            const newProfile = {
+              id: sessionUser.id,
+              email: sessionUser.email,
+              full_name: sessionUser.user_metadata?.full_name || '',
+              avatar_url: sessionUser.user_metadata?.avatar_url || '',
+              role: 'unassigned',
+              profile_completed: false
+            };
+            
+            const { data: insertData, error: insertError } = await supabase
+              .from('profiles')
+              .upsert(newProfile, { onConflict: 'id' })
+              .select()
+              .single();
+              
+            if (insertError) throw insertError;
+            
+            if (mounted) {
+              setProfile(insertData);
+              setRole(insertData.role);
+              setProfileCompleted(false);
+            }
+          } else {
+            throw error;
+          }
+        } else {
+          // Profile exists
+          if (mounted) {
+            setProfile(data);
+            setRole(data.role);
+            setProfileCompleted(data.profile_completed || false);
+          }
+        }
+      } catch (error) {
+        console.error('[AuthContext] Error fetching/creating profile:', error);
+        if (mounted) {
           setRole('unassigned');
           setProfile(null);
           setProfileCompleted(false);
-        } else {
-          throw error;
         }
-      } else {
-        setProfile(data);
-        setRole(data.role);
-        setProfileCompleted(data.profile_completed || false);
+      } finally {
+        if (mounted) {
+          setLoading(false);
+          setProfileLoading(false);
+        }
       }
-    } catch (error) {
-      console.error('[AuthContext] Error fetching profile:', error)
-      setRole('unassigned')
-      setProfile(null)
-      setProfileCompleted(false)
-    } finally {
-      setLoading(false)
-      setProfileLoading(false)
-    }
-  }
+    };
 
-  const subscribeToProfile = (userId) => {
-    return supabase
-      .channel(`public:profiles:${userId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${userId}` },
-        (payload) => {
-          if (payload.new) {
-            setProfile(payload.new);
-            setRole(payload.new.role);
-            setProfileCompleted(payload.new.profile_completed || false);
-          }
+    // 1. Initial Session Check
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return;
+      
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        setProfileLoading(true);
+        fetchProfile(session.user);
+        setupSubscription(session.user.id);
+      } else {
+        setLoading(false);
+        setProfileLoading(false);
+      }
+    }).catch(err => {
+      console.error('[AuthContext] getSession error:', err);
+      if (mounted) {
+        setLoading(false);
+        setProfileLoading(false);
+      }
+    });
+
+    // 2. Auth State Listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!mounted) return;
+      
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        setProfileLoading(true);
+        await fetchProfile(session.user);
+        setupSubscription(session.user.id);
+      } else {
+        setRole(null);
+        setProfile(null);
+        setProfileCompleted(false);
+        setLoading(false);
+        setProfileLoading(false);
+        
+        if (profileSubscriptionRef.current) {
+          supabase.removeChannel(profileSubscriptionRef.current);
+          profileSubscriptionRef.current = null;
         }
-      )
-      .subscribe();
-  };
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+      if (profileSubscriptionRef.current) {
+        supabase.removeChannel(profileSubscriptionRef.current);
+      }
+    }
+  }, []);
 
   const refreshProfile = async () => {
     if (user) {
-      await fetchProfile(user.id);
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+          
+        if (!error && data) {
+          setProfile(data);
+          setRole(data.role);
+          setProfileCompleted(data.profile_completed || false);
+        }
+      } catch (err) {
+        console.error('[AuthContext] refreshProfile error:', err);
+      }
     }
   };
 
@@ -119,7 +177,7 @@ export function AuthProvider({ children }) {
     profile,
     role,
     profileCompleted,
-    setRole, // useful for immediate optimistic updates
+    setRole, 
     refreshProfile,
     loading,
     profileLoading,

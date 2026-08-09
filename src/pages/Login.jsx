@@ -3,8 +3,10 @@ import { supabase } from '../lib/supabase';
 import { useNavigate, Link } from 'react-router-dom';
 import Logo from '../components/Logo';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Login() {
+  const { user } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -17,6 +19,12 @@ export default function Login() {
   const [passwordError, setPasswordError] = useState('');
   
   const navigate = useNavigate();
+
+  React.useEffect(() => {
+    if (user) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [user, navigate]);
 
   const validateForm = () => {
     let isValid = true;
@@ -57,9 +65,9 @@ export default function Login() {
         setError(error.message);
       }
       setLoading(false);
-    } else {
-      navigate('/dashboard');
     }
+    // If successful, the onAuthStateChange listener in AuthContext will set 'user'
+    // which triggers the useEffect above to navigate.
   };
 
   const handleGoogleLogin = async () => {

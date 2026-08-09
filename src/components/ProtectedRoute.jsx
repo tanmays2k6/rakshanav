@@ -18,6 +18,11 @@ export default function ProtectedRoute({ children, allowedRoles }) {
     return <Navigate to="/onboarding" replace />;
   }
 
+  // If they HAVE completed onboarding but try to visit /onboarding directly, send them to dashboard
+  if (profileCompleted && window.location.pathname === '/onboarding') {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   if (allowedRoles && !allowedRoles.includes(role)) {
     return <Navigate to="/access-denied" replace />;
   }

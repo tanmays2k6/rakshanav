@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate, Link } from 'react-router-dom';
 import Logo from '../components/Logo';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Signup() {
+  const { user } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
@@ -11,6 +13,12 @@ export default function Signup() {
   const [error, setError] = useState(null);
   const [msg, setMsg] = useState(null);
   const navigate = useNavigate();
+
+  React.useEffect(() => {
+    if (user) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [user, navigate]);
 
   const handleSignup = async (e) => {
     e.preventDefault();
@@ -34,10 +42,8 @@ export default function Signup() {
     } else {
       setMsg("Registration successful! Check your email for verification, or login if auto-confirm is enabled.");
       setLoading(false);
-      // If user is auto-signed in, they will be redirected by AuthContext wrapper or they can navigate manually.
-      if (data.session) {
-        navigate('/onboarding');
-      }
+      // If user is auto-signed in, the onAuthStateChange listener in AuthContext will set 'user'
+      // which triggers the useEffect above to navigate to dashboard (which handles onboarding redirect).
     }
   };
 

@@ -60,7 +60,7 @@ function MapFitter({ bounds }) {
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function UserView({ onAddReport, userReports = [], initialOrigin = '', initialDestination = '', autoTrigger = false }) {
+export default function UserView({ onAddReport, userReports = [], initialOrigin = '', initialDestination = '', autoTrigger = false, isDashboard = false, liveLocation = null, showTraffic = false, showCommunity = false, showStreetlights = false, showJurisdictions = false, communityReports = [] }) {
   const { user } = useAuth()
   const [darkMode,     setDarkMode]     = useState(true)
   const [phase,        setPhase]        = useState('idle')
@@ -91,6 +91,9 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
   // Navigation State
   const [activeTrip, setActiveTrip] = useState(null)
   const [isEndingTrip, setIsEndingTrip] = useState(false)
+  
+  // Jurisdictions State
+  const [jurisdictionsData, setJurisdictionsData] = useState(null)
 
   // ── Auto GPS Initialization ──────────────────────────────────────────────
   const requestGPS = useCallback(() => {
@@ -145,6 +148,15 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
   useEffect(() => {
     requestGPS()
   }, [requestGPS])
+
+  useEffect(() => {
+    if (showJurisdictions && !jurisdictionsData) {
+      fetch('/data/bengaluru_police_jurisdictions.geojson')
+        .then(res => res.json())
+        .then(data => setJurisdictionsData(data))
+        .catch(err => console.warn('Failed to load jurisdictions geojson:', err));
+    }
+  }, [showJurisdictions, jurisdictionsData]);
 
   // ── Route search ─────────────────────────────────────────────────────────
   const handleSearch = useCallback(async (forcedFrom, forcedTo, isGpsActive) => {
@@ -278,12 +290,14 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
           r.confidence = metrics.confidence;
           r.breakdown = metrics.breakdown;
           r.weather = metrics.weather;
+          r.jurisdictions = metrics.jurisdictions;
           r.metricsLoaded = true;
         } catch (err) {
           console.error(`Failed to fetch metrics for ${r.id}:`, err);
           r.infrastructure = null;
           r.reports = null;
           r.score = null;
+          r.jurisdictions = null;
           r.metricsLoaded = false;
         }
         return r;
@@ -611,10 +625,71 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
             </Marker>
           </>
         )}
+
+        {/* Layer: Community */}
+        {showCommunity && communityReports && communityReports.length > 0 && communityReports.map((report) => (
+          <Marker key={report.id} longitude={report.lng} latitude={report.lat}>
+            <div style={pinStyle('#450a0a', '#fca5a5', 'rgba(248,113,113,0.4)')}>
+               ⚠️ {report.category ? report.category.replace(/_/g, ' ') : 'Alert'}
+            </div>
+          </Marker>
+        ))}
+        
+        {/* Layer: Police Jurisdictions */}
+        {showJurisdictions && jurisdictionsData && (
+          <Source id="jurisdictions-src" type="geojson" data={jurisdictionsData}>
+            <Layer 
+              id="jurisdictions-fill" 
+              type="fill" 
+              paint={{
+                'fill-color': '#3b82f6',
+                'fill-opacity': 0.1
+              }} 
+            />
+            <Layer 
+              id="jurisdictions-line" 
+              type="line" 
+              paint={{
+                'line-color': '#60a5fa',
+                'line-width': 2,
+                'line-dasharray': [2, 2]
+              }} 
+            />
+            <Layer 
+              id="jurisdictions-label"
+              type="symbol"
+              layout={{
+                'text-field': ['get', 'Name'],
+                'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+                'text-size': 11,
+                'text-anchor': 'center'
+              }}
+              paint={{
+                'text-color': '#93c5fd',
+                'text-halo-color': 'rgba(15, 23, 42, 0.9)',
+                'text-halo-width': 2
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Layer Overlays (Empty States) */}
+        <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '10px', zIndex: 10, pointerEvents: 'none' }}>
+          {showTraffic && (
+            <div style={{ background: 'rgba(15,23,42,0.8)', border: '1px solid rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '8px', color: '#94a3b8', fontSize: '11px', backdropFilter: 'blur(10px)', fontFamily: "'Inter', sans-serif" }}>
+              Live traffic data unavailable
+            </div>
+          )}
+          {showStreetlights && (
+            <div style={{ background: 'rgba(15,23,42,0.8)', border: '1px solid rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '8px', color: '#94a3b8', fontSize: '11px', backdropFilter: 'blur(10px)', fontFamily: "'Inter', sans-serif" }}>
+              Lighting data unavailable
+            </div>
+          )}
+        </div>
       </Map>
 
       {/* ── LEFT SIDEBAR ─────────────────────────────────────────────────── */}
-      <div className="absolute top-4 left-4 w-[calc(100%-32px)] md:w-[360px] max-h-[calc(100dvh-160px)] md:max-h-[calc(100dvh-90px)] z-30 flex flex-col gap-2.5">
+      <div className={`absolute left-4 w-[calc(100%-32px)] md:w-[360px] max-h-[calc(100dvh-160px)] md:max-h-[calc(100dvh-90px)] z-30 flex flex-col gap-2.5 ${isDashboard ? 'top-[72px]' : 'top-4'}`}>
 
         {/* Search form */}
         <div style={{ ...card({ padding: '20px' }), flexShrink: 0 }}>
@@ -833,6 +908,9 @@ function RouteCard({ data, darkMode, sub, card, txt, color, routeAnalyses, route
         <Pill label={`${data.breakdown?.lighting !== undefined ? Math.round(data.breakdown.lighting) + '/100' : 'Unknown'} Light`} icon="💡" color={color} />
         <Pill label={`${data.reports ?? 'No data'} Reports`} icon="⚠️" color={color} />
         <Pill label={`${data.confidence ?? 0}% Conf`} icon="📊" color={color} />
+        {data.jurisdictions && data.jurisdictions.length > 0 && (
+          <Pill label={`${data.jurisdictions.length} Police Jurisdictions`} icon="🛡" color={color} />
+        )}
       </div>
 
       <div style={{ fontSize: '12px', color: sub, marginBottom: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>

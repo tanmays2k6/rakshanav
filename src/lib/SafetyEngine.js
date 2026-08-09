@@ -40,16 +40,22 @@ export const SafetyEngine = {
     };
 
     let score = 0;
-    score += breakdown.emergency * WEIGHTS.emergency;
-    score += breakdown.lighting * WEIGHTS.lighting;
-    score += breakdown.community * WEIGHTS.community;
-    score += breakdown.roadClass * WEIGHTS.roadClass;
-    score += breakdown.transit * WEIGHTS.transit;
-    score += breakdown.weather * WEIGHTS.weather;
-    score += breakdown.isolation * WEIGHTS.isolation;
-    score += breakdown.historical * WEIGHTS.historical;
+    let totalWeight = 0;
 
-    score = Math.max(0, Math.min(100, Math.round(score)));
+    if (breakdown.emergency !== null) { score += breakdown.emergency * WEIGHTS.emergency; totalWeight += WEIGHTS.emergency; }
+    if (breakdown.lighting !== null) { score += breakdown.lighting * WEIGHTS.lighting; totalWeight += WEIGHTS.lighting; }
+    if (breakdown.community !== null) { score += breakdown.community * WEIGHTS.community; totalWeight += WEIGHTS.community; }
+    if (breakdown.roadClass !== null) { score += breakdown.roadClass * WEIGHTS.roadClass; totalWeight += WEIGHTS.roadClass; }
+    if (breakdown.transit !== null) { score += breakdown.transit * WEIGHTS.transit; totalWeight += WEIGHTS.transit; }
+    if (breakdown.weather !== null) { score += breakdown.weather * WEIGHTS.weather; totalWeight += WEIGHTS.weather; }
+    if (breakdown.isolation !== null) { score += breakdown.isolation * WEIGHTS.isolation; totalWeight += WEIGHTS.isolation; }
+    if (breakdown.historical !== null) { score += breakdown.historical * WEIGHTS.historical; totalWeight += WEIGHTS.historical; }
+
+    if (totalWeight === 0) {
+      score = null;
+    } else {
+      score = Math.max(0, Math.min(100, Math.round(score / totalWeight)));
+    }
 
     return {
       score,
@@ -76,7 +82,7 @@ export const SafetyEngine = {
   },
 
   _calculateEmergencyScore(infra) {
-    if (!infra) return 0;
+    if (!infra || (infra.police === null && infra.hospitals === null)) return null;
     const police = infra.police || 0;
     const hospitals = infra.hospitals || 0;
     const pharmacies = infra.pharmacies || 0;
@@ -85,7 +91,7 @@ export const SafetyEngine = {
   },
 
   _calculateLightingScore(infra, isNightTime) {
-    if (!infra) return isNightTime ? 20 : 100;
+    if (!infra || infra.commercial === null) return null;
     const commercial = infra.commercial || 0;
     if (!isNightTime) return 100;
     let score = commercial * 10;
@@ -119,7 +125,8 @@ export const SafetyEngine = {
   },
 
   _calculateRoadClassScore(highwayTags) {
-    if (!highwayTags || highwayTags.length === 0) return 50; 
+    if (!highwayTags) return null;
+    if (highwayTags.length === 0) return 50; 
     
     let score = 0;
     let counts = { primary: 0, secondary: 0, residential: 0, unclassified: 0 };
@@ -141,7 +148,7 @@ export const SafetyEngine = {
   },
 
   _calculateTransitScore(infra) {
-    if (!infra) return 0;
+    if (!infra || (infra.metro === null && infra.busStops === null)) return null;
     const metro = infra.metro || 0;
     const signals = infra.trafficSignals || 0;
     const bus = infra.busStops || 0;
@@ -159,7 +166,7 @@ export const SafetyEngine = {
   },
 
   _calculateIsolationScore(infra, isNightTime) {
-    if (!infra) return 50;
+    if (!infra || infra.parks === null || infra.commercial === null) return null;
     const parks = infra.parks || 0;
     const commercial = infra.commercial || 0;
 
@@ -171,21 +178,21 @@ export const SafetyEngine = {
   },
 
   _calculateHistoricalScore(historicalIncidents) {
-    if (historicalIncidents === undefined) return 70; 
+    if (historicalIncidents === null || historicalIncidents === undefined) return null; 
     let penalty = historicalIncidents * 2; 
     return Math.max(0, 100 - penalty);
   },
 
   _generateExplanation(breakdown) {
     return {
-      emergency: `Scored ${Math.round(breakdown.emergency)}/100 based on proximity to police and hospitals.`,
-      lighting: `Scored ${Math.round(breakdown.lighting)}/100 based on time of day and commercial activity.`,
-      community: `Scored ${Math.round(breakdown.community)}/100 accounting for nearby hazard reports.`,
-      roadClass: `Scored ${Math.round(breakdown.roadClass)}/100 derived from OpenStreetMap highway classifications.`,
-      transit: `Scored ${Math.round(breakdown.transit)}/100 reflecting public transit and pedestrian infrastructure.`,
-      weather: `Scored ${Math.round(breakdown.weather)}/100 based on live meteorological data.`,
-      isolation: `Scored ${Math.round(breakdown.isolation)}/100 analyzing risk in deserted areas at night.`,
-      historical: `Scored ${Math.round(breakdown.historical)}/100 reflecting long-term incident trends.`
+      emergency: breakdown.emergency !== null ? `Scored ${Math.round(breakdown.emergency)}/100 based on proximity to police and hospitals.` : null,
+      lighting: breakdown.lighting !== null ? `Scored ${Math.round(breakdown.lighting)}/100 based on time of day and commercial activity.` : null,
+      community: breakdown.community !== null ? `Scored ${Math.round(breakdown.community)}/100 accounting for nearby hazard reports.` : null,
+      roadClass: breakdown.roadClass !== null ? `Scored ${Math.round(breakdown.roadClass)}/100 derived from OpenStreetMap highway classifications.` : null,
+      transit: breakdown.transit !== null ? `Scored ${Math.round(breakdown.transit)}/100 reflecting public transit and pedestrian infrastructure.` : null,
+      weather: breakdown.weather !== null ? `Scored ${Math.round(breakdown.weather)}/100 based on live meteorological data.` : null,
+      isolation: breakdown.isolation !== null ? `Scored ${Math.round(breakdown.isolation)}/100 analyzing risk in deserted areas at night.` : null,
+      historical: breakdown.historical !== null ? `Scored ${Math.round(breakdown.historical)}/100 reflecting long-term incident trends.` : 'Historical data unavailable for this jurisdiction'
     };
   }
 };

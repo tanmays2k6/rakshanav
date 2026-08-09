@@ -182,6 +182,28 @@ exports.getRouteMetrics = async (req, res, next) => {
       console.warn('[Route Metrics] Supabase fetch failed:', e.message);
     }
 
+    let jurisdictions = [];
+    try {
+      const supabaseUrl = process.env.VITE_SUPABASE_URL;
+      const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      if (supabaseUrl && supabaseKey) {
+        const jRes = await fetch(`${supabaseUrl}/rest/v1/rpc/get_jurisdictions_by_route`, {
+           method: 'POST',
+           headers: { 
+             'apikey': supabaseKey, 
+             'Authorization': `Bearer ${supabaseKey}`,
+             'Content-Type': 'application/json' 
+           },
+           body: JSON.stringify({ route_geojson: { type: "LineString", coordinates: coords } })
+        });
+        if (jRes.ok) {
+           jurisdictions = await jRes.json();
+        }
+      }
+    } catch (e) {
+      console.warn('[Route Metrics] Jurisdiction fetch failed:', e.message);
+    }
+
     const safetyStart = Date.now();
     const confidenceMetrics = {
       gps: true,
@@ -219,6 +241,7 @@ exports.getRouteMetrics = async (req, res, next) => {
       confidence: safetyData.confidence,
       infrastructure: infrastructure,
       reports: reportsArray ? reportsArray.length : null,
+      jurisdictions: jurisdictions,
       breakdown: safetyData.breakdown,
       explanation: safetyData.explanation,
       weather: weatherData,
