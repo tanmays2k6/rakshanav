@@ -18,6 +18,7 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
   const location = useLocation();
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [hasUnreadNotifs, setHasUnreadNotifs] = useState(false);
   
@@ -83,6 +84,11 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
       unsub();
     };
   }, [user, role]);
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [location.pathname]);
 
   // Handle window resize for auto-collapse
   useEffect(() => {
@@ -158,18 +164,30 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
   const formattedDate = today.toLocaleDateString('en-US', dateOptions);
 
   return (
-    <div className={`flex h-screen overflow-hidden ${isDarkMode ? 'bg-[#080c10] text-white' : 'bg-gray-50 text-gray-900'} transition-colors duration-300 font-sans`}>
+    <div className={`flex h-[100dvh] overflow-hidden ${isDarkMode ? 'bg-[#080c10] text-white' : 'bg-gray-50 text-gray-900'} transition-colors duration-300 font-sans`}>
       
+      {/* Mobile Overlay */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
       <motion.aside 
         initial={false}
-        animate={{ width: isCollapsed ? 80 : 256 }}
-        className={`m-4 flex flex-col z-20 shrink-0 ${isDarkMode ? 'glass-panel' : 'glass-panel-light'} relative`}
+        animate={{ width: isCollapsed && window.innerWidth >= 1024 ? 80 : 256 }}
+        className={`fixed lg:relative inset-y-0 left-0 z-50 lg:z-20 shrink-0 flex flex-col transition-transform duration-300 ease-in-out
+          ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'}
+          ${isDarkMode ? 'glass-panel bg-[#080c10]/95 lg:bg-[rgba(8,12,18,0.6)]' : 'glass-panel-light bg-white/95 lg:bg-[rgba(255,255,255,0.85)]'} 
+          lg:m-4 m-0 h-[100dvh] lg:h-auto w-64 lg:w-auto
+        `}
       >
-        {/* Collapse Toggle */}
+        {/* Collapse Toggle (Desktop Only) */}
         <button 
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className={`absolute -right-3 top-8 w-6 h-6 rounded-full flex items-center justify-center border ${isDarkMode ? 'bg-[#080c10] border-white/10 text-gray-400 hover:text-white' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-900'} z-30 transition-colors`}
+          className={`hidden lg:flex absolute -right-3 top-8 w-6 h-6 rounded-full items-center justify-center border ${isDarkMode ? 'bg-[#080c10] border-white/10 text-gray-400 hover:text-white' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-900'} z-30 transition-colors`}
         >
           {isCollapsed ? <Menu className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
         </button>
@@ -307,10 +325,37 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
       </motion.aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col relative h-full min-w-0">
+      <main className="flex-1 flex flex-col relative h-[100dvh] min-w-0">
         
-        {/* Top Header - Perfect Alignment */}
-        <header className="h-20 flex items-center justify-between px-10 z-10 shrink-0 border-b border-white/5">
+        {/* Mobile Top Header (Visible only on lg:hidden) */}
+        <header className="lg:hidden h-16 flex items-center justify-between px-4 z-30 shrink-0 border-b border-white/5 bg-black/20 backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setIsMobileMenuOpen(true)}
+              className={`p-2 rounded-xl border ${isDarkMode ? 'bg-white/5 border-white/10 text-gray-300' : 'bg-white border-gray-200 text-gray-600'}`}
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <Logo size="sm" />
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <button onClick={() => navigate('/dashboard/notifications')} className="relative">
+              <Bell className={`w-5 h-5 ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`} />
+              {hasUnreadNotifs && <span className="absolute -top-1 -right-1 w-2 h-2 bg-brand-neonRed rounded-full border border-[#080c10]"></span>}
+            </button>
+            <button onClick={() => navigate('/dashboard/profile')} className="w-8 h-8 rounded-full overflow-hidden border border-white/10">
+              {profile?.avatar_url || user?.user_metadata?.avatar_url ? (
+                <img src={profile?.avatar_url || user?.user_metadata?.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                <UserIcon isDarkMode={isDarkMode} />
+              )}
+            </button>
+          </div>
+        </header>
+
+        {/* Desktop Top Header - Perfect Alignment */}
+        <header className="hidden lg:flex h-20 items-center justify-between px-10 z-10 shrink-0 border-b border-white/5">
           
           {/* Left: Greeting & Date */}
           <div className="flex flex-col justify-center pt-2">
@@ -403,16 +448,46 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
         </header>
 
         {/* Content Area with 12-Column Grid Ready Container */}
-        <div className="flex-1 relative overflow-y-auto overflow-x-hidden custom-scrollbar px-8 pb-8 flex flex-col gap-6">
+        <div className={`flex-1 relative overflow-y-auto overflow-x-hidden custom-scrollbar px-4 lg:px-8 pb-[100px] lg:pb-8 flex flex-col gap-6 pt-4 lg:pt-0`}>
           {children}
         </div>
       </main>
+
+      {/* Mobile Bottom Navigation for Citizens */}
+      {role === 'citizen' && (
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#080c10]/95 backdrop-blur-xl border-t border-white/10 pb-safe px-2">
+          <div className="flex items-center justify-around h-16">
+            <Link to="/dashboard" className={`flex flex-col items-center justify-center w-full h-full gap-1 ${location.pathname === '/dashboard' ? 'text-brand-blue' : 'text-gray-500 hover:text-gray-400'}`}>
+              <Home className="w-[22px] h-[22px]" />
+              <span className="text-[10px] font-medium">Home</span>
+            </Link>
+            <Link to="/dashboard/navigation" className={`flex flex-col items-center justify-center w-full h-full gap-1 ${location.pathname === '/dashboard/navigation' ? 'text-brand-blue' : 'text-gray-500 hover:text-gray-400'}`}>
+              <Navigation className="w-[22px] h-[22px]" />
+              <span className="text-[10px] font-medium">Navigate</span>
+            </Link>
+            <div className="relative -top-4 w-[60px] flex justify-center">
+              {/* Center SOS/Map Action if needed, we'll use a large map icon */}
+              <Link to="/dashboard/tracking" className="w-12 h-12 rounded-full bg-brand-blue/20 flex items-center justify-center border border-brand-blue/30 text-brand-blue shadow-[0_0_15px_rgba(59,130,246,0.3)]">
+                <Map className="w-5 h-5" />
+              </Link>
+            </div>
+            <Link to="/dashboard/ai" className={`flex flex-col items-center justify-center w-full h-full gap-1 ${location.pathname === '/dashboard/ai' ? 'text-[#a855f7]' : 'text-gray-500 hover:text-gray-400'}`}>
+              <Bot className="w-[22px] h-[22px]" />
+              <span className="text-[10px] font-medium">AI Agent</span>
+            </Link>
+            <Link to="/dashboard/profile" className={`flex flex-col items-center justify-center w-full h-full gap-1 ${location.pathname === '/dashboard/profile' ? 'text-brand-blue' : 'text-gray-500 hover:text-gray-400'}`}>
+              <User className="w-[22px] h-[22px]" />
+              <span className="text-[10px] font-medium">Profile</span>
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Floating Emergency SOS Button */}
       {role === 'citizen' && (
         <button 
           onClick={() => navigate('/dashboard/emergency', { state: { autoTrigger: true } })}
-          className="fixed bottom-8 right-8 w-14 h-14 rounded-2xl bg-gradient-to-br from-red-500 to-brand-neonRed flex flex-col items-center justify-center shadow-[0_8px_32px_rgba(239,68,68,0.4)] hover:scale-105 active:scale-95 transition-all z-50 group border border-red-400/50"
+          className="fixed bottom-[88px] lg:bottom-8 right-4 lg:right-8 w-14 h-14 rounded-2xl bg-gradient-to-br from-red-500 to-brand-neonRed flex flex-col items-center justify-center shadow-[0_8px_32px_rgba(239,68,68,0.4)] hover:scale-105 active:scale-95 transition-all z-50 group border border-red-400/50"
           title="Emergency SOS"
         >
           <ShieldAlert className="w-6 h-6 text-white mb-0.5 group-hover:animate-bounce" />

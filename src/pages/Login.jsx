@@ -85,7 +85,7 @@ export default function Login() {
       {/* Subtle radial glow background to add depth without distraction */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-brand-blue/5 via-[#080c10] to-[#080c10] pointer-events-none"></div>
 
-      <div className="glass-panel w-full max-w-md p-8 relative z-10 flex flex-col">
+      <div className="glass-panel w-full max-w-md p-6 md:p-8 relative z-10 flex flex-col">
         {/* Header Section */}
         <div className="flex flex-col items-center mb-8">
           <div className="w-[120px] md:w-[140px] mb-3">

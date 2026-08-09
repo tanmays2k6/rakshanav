@@ -17,6 +17,8 @@
     background: #080c10;
     color: #e8edf2;
     overflow-x: hidden;
+    width: 100%;
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
@@ -63,3 +65,20 @@
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(30,58,95,0.5); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(30,58,95,0.8); }
+
+/* Hide scrollbar on mobile but allow scrolling */
+@media (max-width: 1023px) {
+  .custom-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .custom-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+}
+
+/* Safe Area Insets Helpers */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 20px); }
+.pt-safe { padding-top: env(safe-area-inset-top, 20px); }
+.mb-safe { margin-bottom: env(safe-area-inset-bottom, 20px); }
+.mt-safe { margin-top: env(safe-area-inset-top, 20px); }

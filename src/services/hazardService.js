@@ -23,6 +23,44 @@ export const hazardService = {
   },
 
   /**
+   * Fetch recent alerts for public dashboard
+   */
+  async getRecentAlerts() {
+    const { data, error } = await supabase
+      .from('public_incident_view')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(5);
+      
+    if (error) {
+      console.error('Error fetching recent alerts:', error);
+      return [];
+    }
+    return data;
+  },
+
+  /**
+   * Fetch nearby hazards
+   */
+  async getNearbyHazards(lat, lng, radiusKm = 5) {
+    const radiusDeg = radiusKm / 111;
+      
+    const { data, error } = await supabase
+      .from('public_incident_view')
+      .select('*')
+      .gte('lat', lat - radiusDeg)
+      .lte('lat', lat + radiusDeg)
+      .gte('lng', lng - radiusDeg)
+      .lte('lng', lng + radiusDeg);
+      
+    if (error) {
+      console.error('Error fetching nearby hazards:', error);
+      return [];
+    }
+    return data;
+  },
+
+  /**
    * Fetch live statistics directly from Supabase
    */
   async getReportStats() {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Users, ShieldAlert, Activity, AlertTriangle, ShieldCheck, Server, Database } from 'lucide-react';
+import { Users, ShieldAlert, Activity, AlertTriangle, ShieldCheck, Server, Database, History } from 'lucide-react';
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState({

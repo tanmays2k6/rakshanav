@@ -96,7 +96,7 @@ export default function CitizenDashboard() {
         const offset = 0.045;
         
         const { data, error } = await supabase
-          .from('incident_reports')
+          .from('public_incident_view')
           .select('*')
           .eq('status', 'pending')
           .gte('lat', lat - offset)
@@ -227,17 +227,17 @@ export default function CitizenDashboard() {
           </div>
 
           {/* Live Safety Map */}
-          <div className="glass-panel relative overflow-hidden group min-h-[700px] h-[700px] w-full flex flex-col shadow-2xl ring-1 ring-white/5">
+          <div className="glass-panel relative overflow-hidden group min-h-[500px] lg:min-h-[700px] h-[60dvh] lg:h-[700px] w-full flex flex-col shadow-2xl ring-1 ring-white/5">
             <div className="absolute top-4 left-4 right-4 z-10 flex justify-between items-start pointer-events-none">
-              <div className="glass-panel px-4 py-2 flex items-center gap-3 pointer-events-auto bg-black/40 backdrop-blur-md">
+              <div className="glass-panel px-3 lg:px-4 py-2 flex flex-wrap lg:flex-nowrap items-center gap-2 lg:gap-3 pointer-events-auto bg-black/40 backdrop-blur-md">
                 <div className="flex items-center gap-2">
                   <Radio className={`w-4 h-4 ${loading ? 'text-yellow-400 animate-pulse' : 'text-brand-neonGreen'}`} />
-                  <span className="text-[13px] font-bold font-display tracking-wide text-white">
+                  <span className="text-[11px] lg:text-[13px] font-bold font-display tracking-wide text-white">
                     {loading ? 'Acquiring Signal...' : 'Live Safety Map'}
                   </span>
                 </div>
-                <div className="w-px h-4 bg-white/20 mx-1"></div>
-                <div className="flex gap-2">
+                <div className="hidden lg:block w-px h-4 bg-white/20 mx-1"></div>
+                <div className="flex gap-1 lg:gap-2 w-full lg:w-auto mt-2 lg:mt-0">
                   <MapToggle active={showTraffic} onClick={() => setShowTraffic(!showTraffic)} label="Traffic" />
                   <MapToggle active={showCommunity} onClick={() => setShowCommunity(!showCommunity)} label="Community" />
                   <MapToggle active={showStreetlights} onClick={() => setShowStreetlights(!showStreetlights)} label="Lights" />
@@ -269,11 +269,11 @@ export default function CitizenDashboard() {
 
           {/* Quick Actions */}
           <div>
-            <h3 className="text-2xl font-bold font-display mb-6 flex items-center gap-3 text-white">
-              <Zap className="w-6 h-6 text-brand-orange" />
+            <h3 className="text-xl lg:text-2xl font-bold font-display mb-4 lg:mb-6 flex items-center gap-3 text-white">
+              <Zap className="w-5 h-5 lg:w-6 lg:h-6 text-brand-orange" />
               Quick Actions
             </h3>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <ActionCard title="Start Safe Navigation" icon={<Navigation2 />} to="/dashboard/navigation" color="blue" />
               <ActionCard title="AI Route Analysis" icon={<Bot />} to="/dashboard/ai" color="purple" />
               <ActionCard title="Report Hazard" icon={<AlertTriangle />} to="/dashboard/report" color="red" />

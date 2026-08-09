@@ -42,10 +42,10 @@ export default function GovtView({ userReports = [], onResolveReport }) {
   const lightShadow = darkMode ? 'none' : '0 12px 30px rgba(15,23,42,0.08)'
 
   return (
-    <div style={{ display: 'flex', height: '100%', fontFamily: "'Inter', sans-serif" }}>
+    <div className="flex flex-col lg:flex-row h-full font-sans" style={{ background: sidebarBg }}>
 
       {/* ── FULL MAP ──────────────────────────────────────────────────────── */}
-      <div style={{ flex: 1, position: 'relative' }}>
+      <div className="relative min-h-[50dvh] lg:min-h-0 flex-1">
         <Map
           initialViewState={{ longitude: 77.6080, latitude: 12.9464, zoom: 11.5 }}
           style={{ width: '100%', height: '100%' }}
@@ -119,12 +119,9 @@ export default function GovtView({ userReports = [], onResolveReport }) {
       </div>
 
       {/* ── RIGHT SIDEBAR ────────────────────────────────────────────────── */}
-      <div style={{
-        width: '380px', flexShrink: 0,
+      <div className="w-full lg:w-[380px] shrink-0 flex flex-col overflow-y-auto border-t lg:border-t-0 lg:border-l" style={{
         background: sidebarBg,
-        borderLeft: `1px solid ${sidebarBorder}`,
-        display: 'flex', flexDirection: 'column',
-        overflowY: 'auto',
+        borderColor: sidebarBorder,
       }}>
         {/* Header */}
         <div style={{ padding: '20px 20px 16px', borderBottom: `1px solid ${sidebarBorder}` }}>

@@ -46,7 +46,7 @@ export default function Signup() {
       <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] bg-brand-orange opacity-10 rounded-full blur-[100px]"></div>
       <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-brand-blue opacity-10 rounded-full blur-[100px]"></div>
 
-      <div className="glass-panel w-full max-w-md p-8 relative z-10 flex flex-col gap-6">
+      <div className="glass-panel w-full max-w-md p-6 md:p-8 relative z-10 flex flex-col gap-6">
         <div className="flex flex-col items-center gap-2 mb-4">
           <Logo size="xl" className="mb-2" />
           <h1 className="text-3xl font-display font-bold text-white tracking-tight">Create Account</h1>

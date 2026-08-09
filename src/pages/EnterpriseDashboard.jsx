@@ -119,7 +119,7 @@ export default function EnterpriseDashboard() {
   }
 
   return (
-    <div className="w-full h-full flex flex-col gap-6 overflow-hidden">
+    <div className="w-full min-h-full flex flex-col gap-6">
       
       {/* KPI ROW */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 shrink-0">
@@ -169,7 +169,7 @@ export default function EnterpriseDashboard() {
       <div className="flex-1 grid grid-cols-1 xl:grid-cols-3 gap-6 min-h-[500px]">
         
         {/* LIVE OPERATIONS MAP (Takes up 2 columns on large screens) */}
-        <div className="xl:col-span-2 glass-panel rounded-xl border border-white/10 flex flex-col overflow-hidden relative">
+        <div className="xl:col-span-2 glass-panel rounded-xl border border-white/10 flex flex-col overflow-hidden relative min-h-[400px]">
           <div className="px-6 py-4 border-b border-white/10 flex justify-between items-center bg-black/20 shrink-0 z-10">
             <h3 className="font-semibold text-white flex items-center gap-2">
               <MapIcon className="w-5 h-5 text-brand-blue" />
@@ -244,7 +244,7 @@ export default function EnterpriseDashboard() {
         <div className="flex flex-col gap-6 overflow-hidden">
           
           {/* Currently Travelling List */}
-          <div className="glass-panel rounded-xl border border-white/10 flex flex-col h-1/2">
+          <div className="glass-panel rounded-xl border border-white/10 flex flex-col flex-1 min-h-[300px]">
             <div className="px-5 py-3 border-b border-white/10 bg-black/20 shrink-0">
               <h3 className="font-semibold text-white text-sm">CURRENTLY TRAVELLING</h3>
             </div>
@@ -274,7 +274,7 @@ export default function EnterpriseDashboard() {
           </div>
 
           {/* Alert Center / Incidents */}
-          <div className="glass-panel rounded-xl border border-white/10 flex flex-col h-1/2">
+          <div className="glass-panel rounded-xl border border-white/10 flex flex-col flex-1 min-h-[300px]">
             <div className="px-5 py-3 border-b border-white/10 bg-black/20 shrink-0 flex justify-between items-center">
               <h3 className="font-semibold text-white text-sm">ALERT CENTER</h3>
               <button onClick={() => navigate('/enterprise/alerts')} className="text-xs text-brand-blue hover:text-white transition-colors">View All</button>

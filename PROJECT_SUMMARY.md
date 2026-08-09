@@ -36,25 +36,12 @@
 - **Backend (API Proxy)**: A custom Node.js/Express server (`/server`).
 - **Production Deployment Status**: Production deployment requires a separately hosted Express backend (to proxy Gemini/Overpass requests) alongside the static frontend, and is not fully configured in the repository. The current architecture operates smoothly in local development.
 
-## 4. SECURITY & ROW LEVEL SECURITY (RLS) AUDIT
-RLS is enabled on key tables including `profiles`, `incident_reports`, `sos_events`, and `notifications`. The following policies were verified:
-
-### `profiles`
-- **SELECT**: Users can view their own profile (`auth.uid() = id`). Public profiles are viewable by everyone (`true`).
-- **INSERT**: Users can insert their own profile (`auth.uid() = id`).
-- **UPDATE**: Users can update their own profile (`auth.uid() = id`).
-- **DELETE**: No explicit policy exists for user deletion.
-
-### `incident_reports`
-- **SELECT**: Anyone can view incident reports (`true`).
-- **INSERT**: Authenticated users can insert, strictly enforcing `auth.uid() = user_id`. Anonymous inserts are allowed if `is_anonymous = true` and `user_id` is null.
-- **UPDATE**: The owner can update (`auth.uid() = user_id`). Crucially, Government members can also update reports IF they are in the `government_members` table with status='approved' and role in ('owner', 'admin', 'officer').
-- **DELETE**: The owner can delete (`auth.uid() = user_id`).
-
-### `sos_events`
-- **SELECT**: Users view their own (`auth.uid() = user_id`). Government/Enterprise/Admin profiles can view all.
-- **INSERT**: Users insert their own (`auth.uid() = user_id`).
-- **UPDATE**: Users update their own (`auth.uid() = user_id`).
+## 4. SECURITY & RLS (Strictly Enforced)
+- **Deny By Default Model**: All tables are secured using PostgreSQL Row Level Security (RLS).
+- **Profiles**: Restricted strictly to `auth.uid() = id`. `is_gov_officer` and `get_user_role` helper functions bypass recursion to securely allow Admin/Government queries.
+- **Incident Reports**: Private and scoped to the reporter. Community hazard markers are exposed exclusively via a sanitized database view (`public_incident_view`) which strips PII.
+- **Live Tracking**: `live_sessions` and `live_locations` are entirely private to the owner. Public tracking links are serviced via secure RPC endpoints (`get_live_session_by_token`) that validate token expiration without exposing raw tables.
+- **Emergency / Medical Data**: Strictly scoped to the owner, ensuring critical privacy.
 
 *Note: The previously observed "null value in column email of relation profiles violates not-null constraint" issue has been resolved; the `profiles` table does not enforce a not-null email column in the current schema (uses `phone`).*
 

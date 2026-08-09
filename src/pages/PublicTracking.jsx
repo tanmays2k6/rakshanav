@@ -39,11 +39,9 @@ export default function PublicTracking() {
 
         const fetchSession = async () => {
       // 1. Fetch Session
-      const { data: sessionData, error: sessionError } = await supabase
-        .from('live_sessions')
-        .select('*')
-        .eq('share_token', token)
-        .single();
+      const { data: sessionDataArray, error: sessionError } = await supabase
+        .rpc('get_live_session_by_token', { p_token: token });
+      const sessionData = sessionDataArray?.[0];
 
       if (sessionError) {
         if (process.env.NODE_ENV === 'development') {
@@ -75,11 +73,7 @@ export default function PublicTracking() {
 
       // 2. Fetch last 100 historical locations
       const { data: locData, error: locError } = await supabase
-        .from('live_locations')
-        .select('*')
-        .eq('session_id', sessionData.id)
-        .order('timestamp', { ascending: false })
-        .limit(100);
+        .rpc('get_live_locations_by_session', { p_session_id: sessionData.id });
 
       if (locError && process.env.NODE_ENV === 'development') {
         console.error("Live Tracking Error [live_locations]:", locError);

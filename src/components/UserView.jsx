@@ -614,11 +614,7 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
       </Map>
 
       {/* ── LEFT SIDEBAR ─────────────────────────────────────────────────── */}
-      <div style={{
-        position: 'absolute', top: '24px', left: '24px',
-        width: 'min(340px, 30vw)', maxHeight: 'calc(100vh - 90px)',
-        zIndex: 30, display: 'flex', flexDirection: 'column', gap: '10px',
-      }}>
+      <div className="absolute top-4 left-4 w-[calc(100%-32px)] md:w-[360px] max-h-[calc(100dvh-160px)] md:max-h-[calc(100dvh-90px)] z-30 flex flex-col gap-2.5">
 
         {/* Search form */}
         <div style={{ ...card({ padding: '20px' }), flexShrink: 0 }}>
