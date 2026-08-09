@@ -97,6 +97,8 @@ export default function Onboarding() {
           ...payloadToSubmit,
           profile_completed: true,
           updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'id'
         });
 
       if (updateError) throw updateError;

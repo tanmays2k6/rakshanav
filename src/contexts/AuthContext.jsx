@@ -9,6 +9,7 @@ export function AuthProvider({ children }) {
   const [role, setRole] = useState(null)
   const [profileCompleted, setProfileCompleted] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [profileLoading, setProfileLoading] = useState(true)
 
   useEffect(() => {
     let profileSubscription = null;
@@ -17,20 +18,24 @@ export function AuthProvider({ children }) {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
       if (session?.user) {
+        setProfileLoading(true)
         fetchProfile(session.user.id)
         profileSubscription = subscribeToProfile(session.user.id)
       } else {
         setLoading(false)
+        setProfileLoading(false)
       }
     }).catch(err => {
       console.error('[AuthContext] getSession error:', err);
       setLoading(false);
+      setProfileLoading(false);
     })
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
       if (session?.user) {
+        setProfileLoading(true)
         fetchProfile(session.user.id)
         if (!profileSubscription) profileSubscription = subscribeToProfile(session.user.id)
       } else {
@@ -38,6 +43,7 @@ export function AuthProvider({ children }) {
         setProfile(null)
         setProfileCompleted(false)
         setLoading(false)
+        setProfileLoading(false)
         if (profileSubscription) {
           supabase.removeChannel(profileSubscription)
           profileSubscription = null
@@ -81,6 +87,7 @@ export function AuthProvider({ children }) {
       setProfileCompleted(false)
     } finally {
       setLoading(false)
+      setProfileLoading(false)
     }
   }
 
@@ -115,6 +122,7 @@ export function AuthProvider({ children }) {
     setRole, // useful for immediate optimistic updates
     refreshProfile,
     loading,
+    profileLoading,
     signOut: () => supabase.auth.signOut(),
   }
 

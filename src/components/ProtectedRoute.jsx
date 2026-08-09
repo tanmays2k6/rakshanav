@@ -3,9 +3,9 @@ import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function ProtectedRoute({ children, allowedRoles }) {
-  const { user, role, profileCompleted, loading } = useAuth();
+  const { user, role, profileCompleted, loading, profileLoading } = useAuth();
 
-  if (loading) {
+  if (loading || profileLoading) {
     return <div className="h-screen flex items-center justify-center bg-[#080c10] text-white">Loading...</div>;
   }
 
