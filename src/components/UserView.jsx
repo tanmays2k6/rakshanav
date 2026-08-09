@@ -59,6 +59,18 @@ function MapFitter({ bounds }) {
   return null
 }
 
+function GpsTracker({ currentCoords, useGps, phase }) {
+  const { current: map } = useMap()
+  useEffect(() => {
+    if (useGps && currentCoords && map && phase === 'idle') {
+      const t = setTimeout(() => map.flyTo({ center: [currentCoords.lng, currentCoords.lat], zoom: 15, duration: 1200 }), 100);
+      return () => clearTimeout(t);
+    }
+  }, [currentCoords, useGps, map, phase])
+  return null
+}
+
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function UserView({ onAddReport, userReports = [], initialOrigin = '', initialDestination = '', autoTrigger = false, isDashboard = false, liveLocation = null, showTraffic = false, showCommunity = false, showStreetlights = false, showJurisdictions = false, communityReports = [] }) {
   const { user } = useAuth()
@@ -118,9 +130,11 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
           
           if (!isWithinBengaluru(lat, lng)) {
             setGpsStatus('out_of_bounds')
-            setUseGps(false)
-            setErrorMsg(`Location detected outside supported region. RakshaNav is currently optimized for Bengaluru.`)
-            setPhase('error')
+            setUseGps(true) // DO NOT disable GPS just because we are outside Bengaluru routing area
+            if (isDashboard) {
+               setErrorMsg(`Location detected outside supported region. RakshaNav is currently optimized for Bengaluru.`)
+               setPhase('error')
+            }
           } else {
             setGpsStatus('granted')
             setUseGps(true)
@@ -132,7 +146,11 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
              setUseGps(true)
           } else {
              setGpsStatus('out_of_bounds')
-             setUseGps(false)
+             setUseGps(true)
+             if (isDashboard) {
+                setErrorMsg(`Location detected outside supported region. RakshaNav is currently optimized for Bengaluru.`)
+                setPhase('error')
+             }
           }
         }
       },

@@ -116,7 +116,7 @@ class LiveTrackingService {
     }
 
     const locData = {
-      latitude, longitude, accuracy, speed: speed || 0, heading: heading || 0, altitude: altitude || 0,
+      latitude, longitude, accuracy, speed, heading, altitude,
       battery: await this.getBatteryLevel(),
       timestamp: new Date(position.timestamp).toISOString()
     };

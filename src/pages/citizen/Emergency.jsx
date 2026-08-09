@@ -172,20 +172,20 @@ export default function Emergency() {
     }
     
     setCountdown(5);
-    countdownTimer.current = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) {
-          clearInterval(countdownTimer.current);
-          triggerSOSSequence();
-          return null;
-        }
-        return prev - 1;
-      });
-    }, 1000);
   };
 
+  useEffect(() => {
+    let timer;
+    if (countdown !== null && countdown > 0) {
+      timer = setTimeout(() => setCountdown(c => c - 1), 1000);
+    } else if (countdown === 0 && !isSosActive && !isSubmittingSOS) {
+      setCountdown(null);
+      triggerSOSSequence();
+    }
+    return () => clearTimeout(timer);
+  }, [countdown, isSosActive, isSubmittingSOS]);
+
   const cancelSOS = () => {
-    clearInterval(countdownTimer.current);
     setCountdown(null);
   };
 

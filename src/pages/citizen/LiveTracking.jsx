@@ -113,12 +113,12 @@ export default function LiveTracking() {
             <div className="glass-panel p-4 flex flex-col items-center text-center justify-center">
               <Activity className="w-5 h-5 text-brand-neonGreen mb-2" />
               <p className="text-xs font-mono text-gray-500 mb-1">SPEED</p>
-              <p className="text-lg font-bold text-white">{telemetry ? (telemetry.speed * 3.6).toFixed(1) : '--'} km/h</p>
+              <p className="text-lg font-bold text-white">{telemetry && telemetry.speed !== null && !isNaN(telemetry.speed) ? (telemetry.speed * 3.6).toFixed(1) : '--'} km/h</p>
             </div>
             <div className="glass-panel p-4 flex flex-col items-center text-center justify-center">
               <Navigation2 className="w-5 h-5 text-brand-orange mb-2" />
               <p className="text-xs font-mono text-gray-500 mb-1">HEADING</p>
-              <p className="text-lg font-bold text-white">{telemetry ? Math.round(telemetry.heading) : '--'}°</p>
+              <p className="text-lg font-bold text-white">{telemetry && telemetry.heading !== null && !isNaN(telemetry.heading) ? Math.round(telemetry.heading) : '--'}°</p>
             </div>
           </div>
 
@@ -140,7 +140,7 @@ export default function LiveTracking() {
                 <Battery className="w-4 h-4 text-brand-neonGreen" />
                 <span className="text-sm text-white">Battery</span>
               </div>
-              <span className="text-xs font-mono text-gray-300">{telemetry ? telemetry.battery : '--'}%</span>
+              <span className="text-xs font-mono text-gray-300">{telemetry && telemetry.battery !== undefined && telemetry.battery !== null ? `${telemetry.battery}%` : 'Unavailable'}</span>
             </div>
           </div>
 
