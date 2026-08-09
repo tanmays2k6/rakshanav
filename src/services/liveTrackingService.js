@@ -1,13 +1,20 @@
 import { supabase } from '../lib/supabase';
 
-// Generate a random 10-character alphanumeric string for short share links
+// Generate a secure 16-character alphanumeric string for share links
 const generateShareToken = () => {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const randomValues = new Uint8Array(16);
+  crypto.getRandomValues(randomValues);
   let token = '';
-  for (let i = 0; i < 10; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  for (let i = 0; i < 16; i++) {
+    token += chars[randomValues[i] % chars.length];
   }
   return token;
+};
+
+export const getShareUrl = (token) => {
+  const appUrl = import.meta.env.VITE_APP_URL || 'https://rakshanav.vercel.app';
+  return `${appUrl.replace(/\/$/, '')}/live/${token}`;
 };
 
 class LiveTrackingService {
@@ -33,43 +40,86 @@ class LiveTrackingService {
     return R * c;
   }
 
-  // 1. Start a Live Tracking Session
+  async checkActiveSession(userId) {
+    const { data, error } = await supabase
+      .from('live_sessions')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+      
+    if (error && error.code !== 'PGRST116') {
+      console.error('Error checking active session:', error);
+    }
+    
+    // Validate expiration
+    if (data && (!data.expires_at || new Date(data.expires_at) > new Date())) {
+      return data;
+    }
+    return null;
+  }
+
+  // 1. Start a Live Tracking Session (or resume existing)
   async startSession(userId, durationHours = 1) {
     if (this.isTracking) return { success: false, error: 'Tracking already active' };
     
-    this.shareToken = generateShareToken();
-    const expiresAt = new Date(Date.now() + durationHours * 60 * 60 * 1000).toISOString();
+    try {
+      // Check for an existing active session
+      const existingSession = await this.checkActiveSession(userId);
+      if (existingSession) {
+        this.currentSessionId = existingSession.id;
+        this.shareToken = existingSession.share_token;
+        this.isTracking = true;
+        
+        return { 
+          success: true, 
+          token: this.shareToken, 
+          sessionId: this.currentSessionId,
+          expiresAt: existingSession.expires_at,
+          resumed: true
+        };
+      }
+      
+      // Create new session if no active one exists
+      this.shareToken = generateShareToken();
+      const expiresAt = new Date(Date.now() + durationHours * 60 * 60 * 1000).toISOString();
 
-    const { data, error } = await supabase
-      .from('live_sessions')
-      .insert([
-          {
-            user_id: userId,
-            share_token: this.shareToken,
-            is_active: true,
-            expires_at: expiresAt,
-            share_duration: `${durationHours}h`,
-            last_updated: new Date().toISOString(),
-            last_location: null
-          }
-      ])
-      .select('id')
-      .single();
+      const { data, error } = await supabase
+        .from('live_sessions')
+        .insert([
+            {
+              user_id: userId,
+              share_token: this.shareToken,
+              is_active: true,
+              expires_at: expiresAt,
+              share_duration: `${durationHours}h`,
+              last_updated: new Date().toISOString(),
+              last_location: null
+            }
+        ])
+        .select('id')
+        .single();
 
-    if (error) {
-      if (process.env.NODE_ENV === 'development') console.error('Failed to create live session:', error);
-      return { success: false, error: error.message, fullError: error };
+      if (error) {
+        if (process.env.NODE_ENV === 'development') console.error('Failed to create live session:', error);
+        return { success: false, error: error.message, fullError: error };
+      }
+
+      this.currentSessionId = data.id;
+      this.isTracking = true;
+
+      return { 
+        success: true, 
+        token: this.shareToken, 
+        sessionId: this.currentSessionId,
+        expiresAt,
+        resumed: false
+      };
+    } catch (err) {
+      return { success: false, error: 'Failed to start tracking session' };
     }
-
-    this.currentSessionId = data.id;
-    this.isTracking = true;
-
-    return { 
-      success: true, 
-      token: this.shareToken, 
-      sessionId: this.currentSessionId,
-      expiresAt 
-    };
   }
 
   // 2. Start physical GPS Watch

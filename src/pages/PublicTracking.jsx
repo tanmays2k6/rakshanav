@@ -16,13 +16,22 @@ L.Icon.Default.mergeOptions({
 });
 
 // Component to auto-center map when location updates
-function MapUpdater({ center }) {
+function MapUpdater({ center, autoFollow, onDrag }) {
   const map = useMap();
   useEffect(() => {
-    if (center) {
+    if (center && autoFollow) {
       map.setView(center, map.getZoom(), { animate: true });
     }
-  }, [center, map]);
+  }, [center, autoFollow, map]);
+
+  useEffect(() => {
+    const handleDragStart = () => onDrag();
+    map.on('dragstart', handleDragStart);
+    return () => {
+      map.off('dragstart', handleDragStart);
+    };
+  }, [map, onDrag]);
+
   return null;
 }
 
@@ -49,22 +58,27 @@ export default function PublicTracking() {
         }
         // PGRST116 is thrown when .single() finds no rows.
         if (sessionError.code === 'PGRST116') {
-           setError('Tracking Inactive – Link expired or invalid');
+           setError('Tracking Link Invalid');
         } else {
-           setError(`Backend Error: ${sessionError.message} (${sessionError.code})`);
+           setError('Live tracking service is temporarily unavailable.');
         }
         setLoading(false);
         return;
       }
       
       if (!sessionData) {
-        setError('Link expired or invalid');
+        setError('Tracking Link Invalid');
         setLoading(false);
         return;
       }
 
-      if (!sessionData.is_active || new Date(sessionData.expires_at) < new Date()) {
-        setError('This live tracking session has ended or expired.');
+      if (!sessionData.is_active) {
+        setError('Tracking Ended');
+        setLoading(false);
+        return;
+      }
+      if (sessionData.expires_at && new Date(sessionData.expires_at) < new Date()) {
+        setError('Tracking Link Expired');
         setLoading(false);
         return;
       }
@@ -161,6 +175,7 @@ export default function PublicTracking() {
   const latest = locations[locations.length - 1];
   const center = latest ? [latest.latitude, latest.longitude] : [12.9716, 77.5946];
   const path = locations.map(l => [l.latitude, l.longitude]);
+  const [autoFollow, setAutoFollow] = useState(true);
 
   return (
     <div className="h-screen w-full relative flex flex-col bg-[#080c12]">
@@ -213,7 +228,22 @@ export default function PublicTracking() {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           />
           
-          <MapUpdater center={latest ? [latest.latitude, latest.longitude] : null} />
+          <MapUpdater 
+            center={latest ? [latest.latitude, latest.longitude] : null} 
+            autoFollow={autoFollow}
+            onDrag={() => setAutoFollow(false)}
+          />
+
+          {!autoFollow && latest && (
+            <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 1000 }}>
+              <button 
+                onClick={() => setAutoFollow(true)}
+                className="bg-brand-blue hover:bg-blue-600 text-white px-4 py-2 rounded-full font-bold shadow-lg flex items-center gap-2 pointer-events-auto transition-colors"
+              >
+                <Navigation2 className="w-4 h-4" /> Recenter
+              </button>
+            </div>
+          )}
 
           {latest && (
             <>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Map, MapPin, Activity, Navigation2, Zap, Battery, Signal, Share2, StopCircle, Play, AlertTriangle } from 'lucide-react';
 import UserView from '../../components/UserView';
-import { liveTrackingService } from '../../services/liveTrackingService';
+import { liveTrackingService, getShareUrl } from '../../services/liveTrackingService';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function LiveTracking() {
@@ -12,13 +12,37 @@ export default function LiveTracking() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    let mounted = true;
+    const initSession = async () => {
+      if (user) {
+        const existingSession = await liveTrackingService.checkActiveSession(user.id);
+        if (existingSession && mounted) {
+           // Resume silently
+           const res = await liveTrackingService.startSession(user.id, 1);
+           if (res.success) {
+             setSession(res);
+             liveTrackingService.startWatching(
+               (data) => setTelemetry(data),
+               (err) => {
+                 setError(err);
+                 liveTrackingService.stopSession();
+                 setSession(null);
+               }
+             );
+           }
+        }
+      }
+    };
+    initSession();
+
     return () => {
+      mounted = false;
       // Cleanup on unmount
       if (liveTrackingService.isTracking) {
         liveTrackingService.stopSession();
       }
     };
-  }, []);
+  }, [user]);
 
   const handleStartTracking = async () => {
     setError(null);
@@ -58,11 +82,27 @@ export default function LiveTracking() {
     }
   };
 
-  const shareUrl = session ? `${window.location.origin}/live/${session.token}` : '';
+  const shareUrl = session ? getShareUrl(session.token) : '';
 
   const copyLink = () => {
     navigator.clipboard.writeText(shareUrl);
-    alert('Tracking link copied to clipboard!');
+    alert('Tracking link copied!');
+  };
+
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Live Tracking - RakshaNav',
+          text: 'Track my live location securely with RakshaNav:',
+          url: shareUrl
+        });
+      } catch (err) {
+        console.error('Error sharing:', err);
+      }
+    } else {
+      copyLink();
+    }
   };
 
   return (
@@ -173,15 +213,14 @@ export default function LiveTracking() {
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <button onClick={copyLink} className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-lg text-sm font-medium transition-colors flex justify-center items-center gap-2">
-                  <Share2 className="w-4 h-4" /> Copy
+                  <Share2 className="w-4 h-4" /> Copy Link
                 </button>
-                <a 
-                  href={`https://wa.me/?text=Track my live location on RakshaNav: ${encodeURIComponent(shareUrl)}`}
-                  target="_blank" rel="noopener noreferrer"
-                  className="bg-green-600/80 hover:bg-green-600 text-white p-2 rounded-lg text-sm font-medium transition-colors flex justify-center items-center text-center"
+                <button 
+                  onClick={handleShare}
+                  className="bg-brand-blue/80 hover:bg-brand-blue text-white p-2 rounded-lg text-sm font-medium transition-colors flex justify-center items-center text-center gap-2"
                 >
-                  WhatsApp
-                </a>
+                  <Share2 className="w-4 h-4" /> Share
+                </button>
               </div>
               <div className="grid grid-cols-2 gap-2 mt-2">
                 <button 
