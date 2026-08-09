@@ -291,6 +291,7 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
           r.breakdown = metrics.breakdown;
           r.weather = metrics.weather;
           r.jurisdictions = metrics.jurisdictions;
+          r.nearestSafeHaven = metrics.nearestSafeHaven;
           r.metricsLoaded = true;
         } catch (err) {
           console.error(`Failed to fetch metrics for ${r.id}:`, err);
@@ -337,8 +338,8 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
             duration: r.duration,
             safetyScore: r.score ?? 'Unknown',
             lighting: r.breakdown?.lighting !== undefined ? Math.round(r.breakdown.lighting) + '/100' : 'Unknown',
-            hospitals: r.infrastructure?.hospitals ?? 'Unknown',
-            police: r.infrastructure?.police ?? 'Unknown',
+            hospitals: Array.isArray(r.infrastructure?.hospitals) ? r.infrastructure.hospitals.length : (r.infrastructure?.hospitals ?? 'Unknown'),
+            police: Array.isArray(r.infrastructure?.police) ? r.infrastructure.police.length : (r.infrastructure?.police ?? 'Unknown'),
             commercial: r.infrastructure?.commercial ?? 'Unknown',
             communityReports: r.reports ?? 'Unknown',
             weather: r.weather && r.weather.isRaining ? 'Raining' : (r.weather && r.weather.isFoggy ? 'Foggy' : 'Clear')
@@ -626,6 +627,35 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
           </>
         )}
 
+        {/* POI Markers for Active Route */}
+        {(phase === 'results' || phase === 'navigating') && routeData && (
+          (() => {
+            const currentActiveId = phase === 'navigating' && activeTrip ? activeTrip.id : (activeRouteId !== 'all' ? activeRouteId : routeData.candidates[0].id);
+            const activeRoute = routeData.candidates.find(r => r.id === currentActiveId);
+            if (!activeRoute || !activeRoute.infrastructure) return null;
+            
+            const renderPOIs = (poiArray, icon, bg, text, shadow) => {
+              if (!poiArray || !Array.isArray(poiArray)) return null;
+              return poiArray.map((poi, idx) => (
+                <Marker key={`${poi.type}-${idx}-${poi.id || idx}`} longitude={poi.lng} latitude={poi.lat}>
+                  <div style={pinStyle(bg, text, shadow)}>
+                    {icon} {poi.name}
+                  </div>
+                </Marker>
+              ));
+            };
+
+            return (
+              <>
+                {renderPOIs(activeRoute.infrastructure.police, '🛡', '#1e3a8a', '#93c5fd', 'rgba(59,130,246,0.5)')}
+                {renderPOIs(activeRoute.infrastructure.hospitals, '🏥', '#7f1d1d', '#fca5a5', 'rgba(239,68,68,0.5)')}
+                {renderPOIs(activeRoute.infrastructure.fireStations, '🚒', '#7f1d1d', '#fca5a5', 'rgba(239,68,68,0.5)')}
+                {renderPOIs(activeRoute.infrastructure.pharmacies, '💊', '#14532d', '#86efac', 'rgba(34,197,94,0.5)')}
+              </>
+            );
+          })()
+        )}
+
         {/* Layer: Community */}
         {showCommunity && communityReports && communityReports.length > 0 && communityReports.map((report) => (
           <Marker key={report.id} longitude={report.lng} latitude={report.lat}>
@@ -886,6 +916,17 @@ const smallBtn = (darkMode) => ({
   fontSize: '10px', padding: '5px 8px', cursor: 'pointer', fontFamily: "'Inter', sans-serif", fontWeight: 600
 })
 
+function getPoiLabel(poiArray, typeName) {
+  if (poiArray === null || poiArray === undefined) return `Data unavailable`;
+  if (typeof poiArray === 'number') {
+    return poiArray === 0 ? `None nearby` : `${poiArray} ${typeName}`;
+  }
+  if (Array.isArray(poiArray)) {
+    return poiArray.length === 0 ? `None nearby` : `${poiArray.length} ${typeName}`;
+  }
+  return `Data unavailable`;
+}
+
 function RouteCard({ data, darkMode, sub, card, txt, color, routeAnalyses, routeFallbacks, onStart }) {
   // Never hardcoded strings, always generated from real data
   return (
@@ -903,15 +944,29 @@ function RouteCard({ data, darkMode, sub, card, txt, color, routeAnalyses, route
       </div>
       
       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
-        <Pill label={`${data.infrastructure?.police ?? 'Unknown'} Police`} icon="👮" color={color} />
-        <Pill label={`${data.infrastructure?.hospitals ?? 'Unknown'} Hospitals`} icon="🏥" color={color} />
-        <Pill label={`${data.breakdown?.lighting !== undefined ? Math.round(data.breakdown.lighting) + '/100' : 'Unknown'} Light`} icon="💡" color={color} />
-        <Pill label={`${data.reports ?? 'No data'} Reports`} icon="⚠️" color={color} />
+        <Pill label={getPoiLabel(data.infrastructure?.police, 'Police')} icon="👮" color={color} />
+        <Pill label={getPoiLabel(data.infrastructure?.hospitals, 'Hospitals')} icon="🏥" color={color} />
+        <Pill label={`${data.breakdown?.lighting !== undefined && data.breakdown.lighting !== null ? Math.round(data.breakdown.lighting) + '/100' : 'Unknown'} Light`} icon="💡" color={color} />
+        <Pill label={`${data.reports !== null && data.reports !== undefined ? data.reports : 'Data unavailable'} Reports`} icon="⚠️" color={color} />
         <Pill label={`${data.confidence ?? 0}% Conf`} icon="📊" color={color} />
         {data.jurisdictions && data.jurisdictions.length > 0 && (
           <Pill label={`${data.jurisdictions.length} Police Jurisdictions`} icon="🛡" color={color} />
         )}
       </div>
+
+      {data.nearestSafeHaven && (
+        <div style={{ padding: '8px 12px', background: `${color}10`, border: `1px solid ${color}30`, borderRadius: '8px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '16px' }}>
+            {data.nearestSafeHaven.type === 'police' ? '👮' : data.nearestSafeHaven.type === 'hospital' ? '🏥' : '🚒'}
+          </span>
+          <div>
+            <div style={{ fontSize: '10px', color: color, fontFamily: "'JetBrains Mono', monospace", textTransform: 'uppercase', fontWeight: 600 }}>Nearest Safe Haven</div>
+            <div style={{ fontSize: '13px', color: txt('#fff', '#111'), fontWeight: 600 }}>
+              {data.nearestSafeHaven.name} <span style={{ color: sub, fontWeight: 400 }}>({data.nearestSafeHaven.distanceKm} km)</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ fontSize: '12px', color: sub, marginBottom: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
         <span style={{ fontSize: '14px' }}>✨</span> {routeFallbacks && routeFallbacks[data.id] ? 'Deterministic Safety Summary:' : 'AI Safety Analysis:'}

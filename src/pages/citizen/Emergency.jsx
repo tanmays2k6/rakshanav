@@ -39,6 +39,7 @@ export default function Emergency() {
   const [contacts, setContacts] = useState([]);
   const [sosHistory, setSosHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubmittingSOS, setIsSubmittingSOS] = useState(false);
   
   // SOS State
   const [isSosActive, setIsSosActive] = useState(false);
@@ -157,15 +158,15 @@ export default function Emergency() {
 
   
   useEffect(() => {
-    if (location.state?.autoTrigger && !isSosActive && countdown === null) {
+    if (location.state?.autoTrigger && !isSosActive && countdown === null && !isSubmittingSOS) {
       // Clear the state so it doesn't trigger again on re-renders
       window.history.replaceState({}, document.title)
       startSOSCountdown();
     }
-  }, [location.state, isSosActive, countdown]);
+  }, [location.state, isSosActive, countdown, isSubmittingSOS]);
 
   const startSOSCountdown = () => {
-    if (isSosActive) return;
+    if (isSosActive || isSubmittingSOS) return;
     if (contacts.length === 0) {
       if(!window.confirm("You have no emergency contacts added. Activate SOS anyway?")) return;
     }
@@ -189,35 +190,56 @@ export default function Emergency() {
   };
 
   const triggerSOSSequence = () => {
+    if (isSubmittingSOS) return;
+    setIsSubmittingSOS(true);
+
+    const submitSOS = async (locData) => {
+      setSosLocation(locData);
+      
+      if (locData.lat && locData.lng) {
+        fetchNearbyFacilities(locData.lat, locData.lng);
+      }
+      
+      const res = await emergencyService.triggerSOS(user.id, locData);
+      setIsSubmittingSOS(false);
+      
+      if (res.success) {
+        setIsSosActive(true);
+        setActiveSosEvent(res.data);
+        setShareToken(res.shareToken);
+        showToast('Emergency alert recorded.', 'success');
+      } else {
+        const errorMsg = res.error || 'Emergency alert could not be recorded.';
+        showToast(errorMsg, 'error');
+        setCountdown(null);
+      }
+    };
+
     if (!navigator.geolocation) {
-      showToast('Geolocation is not supported by your browser.', 'error');
+      submitSOS({
+        lat: null, lng: null, accuracy: null, speed: null, heading: null, battery: batteryLevel
+      });
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-      const locData = {
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        accuracy: pos.coords.accuracy,
-        speed: pos.coords.speed,
-        heading: pos.coords.heading,
-        battery: batteryLevel
-      };
-      setSosLocation(locData);
-      setIsSosActive(true);
-      fetchNearbyFacilities(locData.lat, locData.lng);
-      
-      const res = await emergencyService.triggerSOS(user.id, locData);
-      if (res.success) {
-        setActiveSosEvent(res.data);
-        setShareToken(res.shareToken);
-      } else {
-        showToast('Failed to trigger SOS on server. Please call emergency services manually.', 'error');
-      }
-    }, (err) => {
-      showToast('Failed to get location. Please enable GPS.', 'error');
-      setCountdown(null);
-    }, { enableHighAccuracy: true });
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        submitSOS({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          speed: pos.coords.speed,
+          heading: pos.coords.heading,
+          battery: batteryLevel
+        });
+      }, 
+      (err) => {
+        submitSOS({
+          lat: null, lng: null, accuracy: null, speed: null, heading: null, battery: batteryLevel
+        });
+      }, 
+      { enableHighAccuracy: true, timeout: 5000 }
+    );
   };
 
   const handleEndSOS = async () => {
@@ -332,9 +354,14 @@ export default function Emergency() {
                         Cancel
                      </button>
                   </motion.div>
-               ) : (
+                 ) : isSubmittingSOS ? (
+                  <motion.div key="submitting" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative z-10 flex flex-col items-center justify-center h-full w-full">
+                     <div className="w-16 h-16 rounded-full border-4 border-t-red-500 border-white/10 animate-spin mb-4"></div>
+                     <h3 className="text-18 font-bold text-red-400 uppercase tracking-widest mb-2">Sending emergency alert...</h3>
+                  </motion.div>
+                 ) : (
                   <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative z-10 flex flex-col items-center justify-center h-full w-full">
-                     <button onClick={startSOSCountdown} className="w-36 h-36 rounded-full bg-gradient-to-br from-red-500 to-red-700 shadow-[0_0_50px_rgba(239,68,68,0.4)] hover:shadow-[0_0_80px_rgba(239,68,68,0.6)] flex items-center justify-center text-white font-black text-[40px] tracking-widest transition-all hover:scale-105 active:scale-95 border-[6px] border-white/20 mb-6 relative group">
+                     <button onClick={startSOSCountdown} disabled={isSubmittingSOS} className="w-36 h-36 rounded-full bg-gradient-to-br from-red-500 to-red-700 shadow-[0_0_50px_rgba(239,68,68,0.4)] hover:shadow-[0_0_80px_rgba(239,68,68,0.6)] flex items-center justify-center text-white font-black text-[40px] tracking-widest transition-all hover:scale-105 active:scale-95 border-[6px] border-white/20 mb-6 relative group disabled:opacity-50 disabled:scale-100">
                         <span className="group-hover:scale-110 transition-transform">SOS</span>
                      </button>
                      <p className="text-13 text-gray-400 font-medium max-w-[200px]">
@@ -350,43 +377,62 @@ export default function Emergency() {
             <h2 className="text-18 font-bold text-white mb-6 flex items-center gap-2">
                <PhoneCall className="w-5 h-5 text-brand-green" /> Quick Dial
             </h2>
-            <div className="grid grid-cols-2 gap-3 h-[calc(100%-40px)]">
-               <a href="tel:100" className="bg-white/5 hover:bg-blue-500/20 border border-white/5 hover:border-blue-500/30 rounded-xl p-3 flex flex-col items-center justify-center gap-2 transition-all group">
-                 <div className="w-10 h-10 rounded-full bg-blue-500/10 text-brand-blue flex items-center justify-center group-hover:scale-110 transition-transform">
-                   <Shield className="w-5 h-5" />
+            <div className="flex flex-col gap-3 h-[calc(100%-40px)]">
+               
+               {/* Primary 112 Button */}
+               <a href="tel:112" className="bg-red-600 hover:bg-red-500 border border-red-400/50 rounded-xl p-4 flex items-center justify-center gap-4 transition-all group shadow-[0_0_20px_rgba(220,38,38,0.3)] hover:shadow-[0_0_30px_rgba(220,38,38,0.5)]">
+                 <div className="w-12 h-12 rounded-full bg-white/20 text-white flex items-center justify-center group-hover:scale-110 transition-transform">
+                   <ShieldAlert className="w-6 h-6" />
                  </div>
-                 <div className="text-center">
-                    <h4 className="font-bold text-white text-13">Police</h4>
-                    <p className="text-[11px] text-gray-400 font-mono mt-0.5">100</p>
-                 </div>
-               </a>
-               <a href="tel:108" className="bg-white/5 hover:bg-red-500/20 border border-white/5 hover:border-red-500/30 rounded-xl p-3 flex flex-col items-center justify-center gap-2 transition-all group">
-                 <div className="w-10 h-10 rounded-full bg-red-500/10 text-brand-neonRed flex items-center justify-center group-hover:scale-110 transition-transform">
-                   <HeartPulse className="w-5 h-5" />
-                 </div>
-                 <div className="text-center">
-                    <h4 className="font-bold text-white text-13">Ambulance</h4>
-                    <p className="text-[11px] text-gray-400 font-mono mt-0.5">108</p>
+                 <div className="text-left">
+                    <h4 className="font-black text-white text-xl uppercase tracking-wider">EMERGENCY</h4>
+                    <p className="text-lg font-black text-red-100 font-mono">112</p>
                  </div>
                </a>
-               <a href="tel:101" className="bg-white/5 hover:bg-orange-500/20 border border-white/5 hover:border-orange-500/30 rounded-xl p-3 flex flex-col items-center justify-center gap-2 transition-all group">
-                 <div className="w-10 h-10 rounded-full bg-orange-500/10 text-orange-500 flex items-center justify-center group-hover:scale-110 transition-transform">
-                   <AlertOctagon className="w-5 h-5" />
-                 </div>
-                 <div className="text-center">
-                    <h4 className="font-bold text-white text-13">Fire</h4>
-                    <p className="text-[11px] text-gray-400 font-mono mt-0.5">101</p>
-                 </div>
-               </a>
-               <a href="tel:1091" className="bg-white/5 hover:bg-purple-500/20 border border-white/5 hover:border-purple-500/30 rounded-xl p-3 flex flex-col items-center justify-center gap-2 transition-all group">
-                 <div className="w-10 h-10 rounded-full bg-purple-500/10 text-purple-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                   <User className="w-5 h-5" />
-                 </div>
-                 <div className="text-center">
-                    <h4 className="font-bold text-white text-[12px]">Women Helpline</h4>
-                    <p className="text-[11px] text-gray-400 font-mono mt-0.5">1091</p>
-                 </div>
-               </a>
+
+               <div className="text-center text-[10px] text-gray-500 uppercase tracking-widest my-1 hidden sm:block">
+                 Dial 112 from your phone
+               </div>
+
+               {/* Secondary Buttons Grid */}
+               <div className="grid grid-cols-2 gap-3 mt-auto">
+                 <a href="tel:100" className="bg-white/5 hover:bg-blue-500/20 border border-white/5 hover:border-blue-500/30 rounded-xl p-3 flex flex-col items-center justify-center gap-2 transition-all group">
+                   <div className="w-8 h-8 rounded-full bg-blue-500/10 text-brand-blue flex items-center justify-center group-hover:scale-110 transition-transform">
+                     <Shield className="w-4 h-4" />
+                   </div>
+                   <div className="text-center">
+                      <h4 className="font-bold text-white text-xs">Police</h4>
+                      <p className="text-[10px] text-gray-400 font-mono mt-0.5">100</p>
+                   </div>
+                 </a>
+                 <a href="tel:108" className="bg-white/5 hover:bg-red-500/20 border border-white/5 hover:border-red-500/30 rounded-xl p-3 flex flex-col items-center justify-center gap-2 transition-all group">
+                   <div className="w-8 h-8 rounded-full bg-red-500/10 text-brand-neonRed flex items-center justify-center group-hover:scale-110 transition-transform">
+                     <HeartPulse className="w-4 h-4" />
+                   </div>
+                   <div className="text-center">
+                      <h4 className="font-bold text-white text-xs">Ambulance</h4>
+                      <p className="text-[10px] text-gray-400 font-mono mt-0.5">108</p>
+                   </div>
+                 </a>
+                 <a href="tel:101" className="bg-white/5 hover:bg-orange-500/20 border border-white/5 hover:border-orange-500/30 rounded-xl p-3 flex flex-col items-center justify-center gap-2 transition-all group">
+                   <div className="w-8 h-8 rounded-full bg-orange-500/10 text-orange-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                     <AlertOctagon className="w-4 h-4" />
+                   </div>
+                   <div className="text-center">
+                      <h4 className="font-bold text-white text-xs">Fire</h4>
+                      <p className="text-[10px] text-gray-400 font-mono mt-0.5">101</p>
+                   </div>
+                 </a>
+                 <a href="tel:1091" className="bg-white/5 hover:bg-purple-500/20 border border-white/5 hover:border-purple-500/30 rounded-xl p-3 flex flex-col items-center justify-center gap-2 transition-all group">
+                   <div className="w-8 h-8 rounded-full bg-purple-500/10 text-purple-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                     <User className="w-4 h-4" />
+                   </div>
+                   <div className="text-center">
+                      <h4 className="font-bold text-white text-[11px]">Women Helpline</h4>
+                      <p className="text-[10px] text-gray-400 font-mono mt-0.5">1091</p>
+                   </div>
+                 </a>
+               </div>
             </div>
          </motion.div>
 

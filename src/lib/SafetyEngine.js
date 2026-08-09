@@ -29,13 +29,13 @@ export const SafetyEngine = {
     const { distanceKm, isNightTime } = context;
 
     const breakdown = {
-      emergency: this._calculateEmergencyScore(infrastructure),
-      lighting: this._calculateLightingScore(infrastructure, isNightTime),
+      emergency: this._calculateEmergencyScore(infrastructure, distanceKm),
+      lighting: this._calculateLightingScore(infrastructure, isNightTime, distanceKm),
       community: this._calculateCommunityScore(communityReports, distanceKm),
       roadClass: this._calculateRoadClassScore(infrastructure?.highwayTags || []),
-      transit: this._calculateTransitScore(infrastructure),
+      transit: this._calculateTransitScore(infrastructure, distanceKm),
       weather: this._calculateWeatherScore(weather),
-      isolation: this._calculateIsolationScore(infrastructure, isNightTime),
+      isolation: this._calculateIsolationScore(infrastructure, isNightTime, distanceKm),
       historical: this._calculateHistoricalScore(infrastructure?.historicalIncidents || 0)
     };
 
@@ -81,21 +81,33 @@ export const SafetyEngine = {
     return Math.round(confidence);
   },
 
-  _calculateEmergencyScore(infra) {
+  _calculateEmergencyScore(infra, distanceKm) {
     if (!infra || (infra.police === null && infra.hospitals === null)) return null;
-    const police = infra.police || 0;
-    const hospitals = infra.hospitals || 0;
-    const pharmacies = infra.pharmacies || 0;
-    let score = (police * 25) + (hospitals * 40) + (pharmacies * 10);
-    return Math.min(100, score);
+    const police = Array.isArray(infra.police) ? infra.police.length : (infra.police || 0);
+    const hospitals = Array.isArray(infra.hospitals) ? infra.hospitals.length : (infra.hospitals || 0);
+    const pharmacies = Array.isArray(infra.pharmacies) ? infra.pharmacies.length : (infra.pharmacies || 0);
+    
+    const dist = Math.max(1, distanceKm || 1);
+    const pDensity = police / dist;
+    const hDensity = hospitals / dist;
+    const phDensity = pharmacies / dist;
+    
+    // 0.2 police/km = 10 pts, 1 hospital/km = 40 pts, 1 pharmacy/km = 10 pts
+    let score = (pDensity * 50) + (hDensity * 40) + (phDensity * 10);
+    return Math.min(100, Math.round(score));
   },
 
-  _calculateLightingScore(infra, isNightTime) {
+  _calculateLightingScore(infra, isNightTime, distanceKm) {
     if (!infra || infra.commercial === null) return null;
     const commercial = infra.commercial || 0;
     if (!isNightTime) return 100;
-    let score = commercial * 10;
-    return Math.max(10, Math.min(100, score)); 
+    
+    const dist = Math.max(1, distanceKm || 1);
+    const cDensity = commercial / dist;
+    
+    // 10 commercial establishments per km is excellent lighting (100 pts)
+    let score = cDensity * 10;
+    return Math.max(10, Math.min(100, Math.round(score))); 
   },
 
   _calculateCommunityScore(reports, distanceKm) {
@@ -147,13 +159,16 @@ export const SafetyEngine = {
     return Math.min(100, Math.round(score));
   },
 
-  _calculateTransitScore(infra) {
+  _calculateTransitScore(infra, distanceKm) {
     if (!infra || (infra.metro === null && infra.busStops === null)) return null;
     const metro = infra.metro || 0;
     const signals = infra.trafficSignals || 0;
     const bus = infra.busStops || 0;
-    let score = (metro * 20) + (bus * 5) + (signals * 2);
-    return Math.min(100, score);
+    
+    const dist = Math.max(1, distanceKm || 1);
+    
+    let score = ((metro / dist) * 50) + ((bus / dist) * 10) + ((signals / dist) * 5);
+    return Math.min(100, Math.round(score));
   },
 
   _calculateWeatherScore(weather) {
@@ -165,16 +180,22 @@ export const SafetyEngine = {
     return Math.max(0, score);
   },
 
-  _calculateIsolationScore(infra, isNightTime) {
+  _calculateIsolationScore(infra, isNightTime, distanceKm) {
     if (!infra || infra.parks === null || infra.commercial === null) return null;
     const parks = infra.parks || 0;
     const commercial = infra.commercial || 0;
-
+    
     if (!isNightTime) return 100; 
-    if (parks > 0 && commercial === 0) return 10; 
-    if (parks > 0 && commercial > 0) return 60;   
-    if (parks === 0 && commercial === 0) return 40; 
-    return 100; 
+    
+    const dist = Math.max(1, distanceKm || 1);
+    const pDensity = parks / dist;
+    const cDensity = commercial / dist;
+    
+    if (pDensity > 0.5 && cDensity < 2) return 10; // High parks, low commercial = isolated at night
+    if (pDensity > 0.5 && cDensity >= 2) return 60; // Parks but sufficient commercial
+    if (pDensity <= 0.5 && cDensity < 2) return 40; // No parks, but deserted
+    
+    return 100; // Well populated
   },
 
   _calculateHistoricalScore(historicalIncidents) {

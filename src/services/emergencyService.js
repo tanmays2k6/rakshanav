@@ -145,7 +145,7 @@ export const emergencyService = {
   async simulateEmergencyNotifications(userId, eventId, token, locationData) {
     // In production, this would also trigger SMS/WhatsApp via Edge Functions.
     // Here we insert a critical system notification to alert authorities/contacts.
-    const message = `SOS Activated! User needs immediate assistance at (${locationData.lat}, ${locationData.lng}). \nLive Tracking Link: https://rakshanav.app/live/${token}`;
+    const message = `Emergency alert recorded! User needs immediate assistance at (${locationData.lat}, ${locationData.lng}). \nLive Tracking Link: https://rakshanav.app/live/${token}`;
     
     await notificationService.createNotification({
       title: '🚨 CRITICAL SOS ALERT',

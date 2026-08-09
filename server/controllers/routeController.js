@@ -235,11 +235,24 @@ exports.getRouteMetrics = async (req, res, next) => {
       diagnostics.safety = { status: 'error', time: Date.now() - safetyStart, error: e.message };
     }
 
+    let nearestSafeHaven = null;
+    if (infrastructure) {
+      const allHavens = [
+        ...(infrastructure.police || []),
+        ...(infrastructure.hospitals || []),
+        ...(infrastructure.fireStations || [])
+      ].sort((a, b) => a.distanceKm - b.distanceKm);
+      if (allHavens.length > 0) {
+        nearestSafeHaven = allHavens[0];
+      }
+    }
+
     return res.json({
       success: true,
       score: safetyData.score,
       confidence: safetyData.confidence,
       infrastructure: infrastructure,
+      nearestSafeHaven: nearestSafeHaven,
       reports: reportsArray ? reportsArray.length : null,
       jurisdictions: jurisdictions,
       breakdown: safetyData.breakdown,
