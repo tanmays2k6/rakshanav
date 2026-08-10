@@ -52,11 +52,11 @@ export const governmentService = {
    * Fetch live reports based on filters
    */
   async getLiveReports(filters = {}) {
+    // NOTE: Do NOT join auth.users — it is not accessible via the client RLS.
     let query = supabase
       .from('incident_reports')
       .select(`
         *,
-        auth_users:user_id ( id ),
         incident_updates (status, created_at)
       `)
       .order('created_at', { ascending: false });
@@ -70,7 +70,11 @@ export const governmentService = {
     }
     
     if (filters.priority) {
-      query = query.eq('priority', filters.priority);
+      if (Array.isArray(filters.priority)) {
+        query = query.in('priority', filters.priority);
+      } else {
+        query = query.eq('priority', filters.priority);
+      }
     }
     
     if (filters.category) {
@@ -80,6 +84,7 @@ export const governmentService = {
     const { data, error } = await query.limit(500);
       
     if (error) {
+      console.error('[governmentService] getLiveReports error:', error);
       return [];
     }
     return data;

@@ -10,6 +10,7 @@ export default function LiveTracking() {
   const [telemetry, setTelemetry] = useState(null);
   const [duration, setDuration] = useState(1);
   const [error, setError] = useState(null);
+  const [timeLeftStr, setTimeLeftStr] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -17,16 +18,17 @@ export default function LiveTracking() {
       if (user) {
         const existingSession = await liveTrackingService.checkActiveSession(user.id);
         if (existingSession && mounted) {
-           // Resume silently
+           // Resume existing active session
            const res = await liveTrackingService.startSession(user.id, 1);
-           if (res.success) {
+           if (res.success && mounted) {
              setSession(res);
              liveTrackingService.startWatching(
-               (data) => setTelemetry(data),
+               (data) => { if (mounted) setTelemetry(data); },
                (err) => {
-                 setError(err);
-                 liveTrackingService.stopSession();
-                 setSession(null);
+                 if (mounted) {
+                   setError(err);
+                   setSession(null);
+                 }
                }
              );
            }
@@ -37,12 +39,38 @@ export default function LiveTracking() {
 
     return () => {
       mounted = false;
-      // Cleanup on unmount
-      if (liveTrackingService.isTracking) {
-        liveTrackingService.stopSession();
-      }
+      // Do NOT stopSession on unmount so link remains active in database until duration expires or user clicks Stop
     };
   }, [user]);
+
+  // Live countdown timer based on session.expiresAt
+  useEffect(() => {
+    if (!session || !session.expiresAt) {
+      setTimeLeftStr('');
+      return;
+    }
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const target = new Date(session.expiresAt).getTime();
+      const diff = target - now;
+
+      if (diff <= 0) {
+        setTimeLeftStr('Expired');
+        handleStopTracking();
+      } else {
+        const mins = Math.floor(diff / (1000 * 60));
+        const secs = Math.floor((diff % (1000 * 60)) / 1000);
+        const pad = (n) => String(n).padStart(2, '0');
+        setTimeLeftStr(`${pad(mins)}:${pad(secs)}`);
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [session, handleStopTracking]);
+
 
   const handleStartTracking = async () => {
     setError(null);
@@ -67,11 +95,12 @@ export default function LiveTracking() {
     }
   };
 
-  const handleStopTracking = async () => {
+  // Stable reference prevents stale closure in the countdown timer useEffect
+  const handleStopTracking = React.useCallback(async () => {
     await liveTrackingService.stopSession();
     setSession(null);
     setTelemetry(null);
-  };
+  }, []);
 
   const handleSOS = () => {
     if (session) {
@@ -193,21 +222,26 @@ export default function LiveTracking() {
                   onChange={(e) => setDuration(Number(e.target.value))}
                   className="w-full bg-white/5 border border-white/10 rounded-lg p-2 text-sm text-white focus:outline-none"
                 >
-                  <option value={0.25}>15 Minutes</option>
-                  <option value={0.5}>30 Minutes</option>
-                  <option value={1}>1 Hour</option>
-                  <option value={4}>4 Hours</option>
+                  <option value={0.25} className="bg-[#080c12]">15 Minutes</option>
+                  <option value={0.5} className="bg-[#080c12]">30 Minutes</option>
+                  <option value={1} className="bg-[#080c12]">1 Hour</option>
+                  <option value={2} className="bg-[#080c12]">2 Hours</option>
+                  <option value={4} className="bg-[#080c12]">4 Hours</option>
                 </select>
               </div>
               <button 
                 onClick={handleStartTracking}
-                className="w-full bg-brand-blue hover:bg-blue-600 text-white p-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
+                className="w-full bg-brand-blue hover:bg-blue-600 text-white p-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 shadow-lg shadow-brand-blue/20"
               >
                 <Play className="w-4 h-4" /> Start Live Sharing
               </button>
             </div>
           ) : (
             <div className="glass-panel p-4 mt-auto space-y-3">
+              <div className="flex justify-between items-center text-xs font-mono text-gray-400">
+                <span>TRACKING LINK</span>
+                {timeLeftStr && <span className="text-brand-neonGreen font-bold">Expires: {timeLeftStr}</span>}
+              </div>
               <div className="bg-white/5 border border-white/10 p-3 rounded-lg break-all text-xs font-mono text-brand-blue">
                 {shareUrl}
               </div>

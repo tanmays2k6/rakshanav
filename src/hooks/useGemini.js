@@ -6,28 +6,13 @@ export function useGeminiChat() {
   const { messages, addMessage, updateLastMessage } = useAIContext();
   const { profile } = useAuth();
   const [isTyping, setIsTyping] = useState(false);
+  const [lastError, setLastError] = useState(null);
   const abortControllerRef = useRef(null);
-
-  const fallbackEngine = (text) => {
-    const t = text.toLowerCase();
-    if (t.includes('help') || t.includes('emergency') || t.includes('sos')) {
-      return "I've detected an emergency keyword. I am navigating you to the Emergency Dashboard immediately. <action type=\"navigate\" target=\"/dashboard/emergency\" />";
-    }
-    if (t.includes('report') || t.includes('hazard') || t.includes('pothole')) {
-      return "Sure, I can help you report a hazard. Let me open the Report Hazard tool for you. <action type=\"navigate\" target=\"/dashboard/report\" />";
-    }
-    if (t.includes('route') || t.includes('navigate') || t.includes('direction')) {
-      return "I can help with navigation. Let me open the Safe Route Engine for you. <action type=\"navigate\" target=\"/dashboard/navigation\" />";
-    }
-    if (t.includes('live') || t.includes('track') || t.includes('share')) {
-      return "Let's share your live location. Opening Live Tracking. <action type=\"navigate\" target=\"/dashboard/live\" />";
-    }
-    return "I'm currently operating in Offline Fallback Mode. I can still help you navigate to features like Emergency SOS, Route Planning, or Hazard Reporting. Just ask!";
-  };
 
   const sendMessage = useCallback(async (text) => {
     if (!text.trim()) return;
 
+    setLastError(null);
     addMessage({ role: 'user', text });
     setIsTyping(true);
 
@@ -70,7 +55,8 @@ export function useGeminiChat() {
       });
 
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `API error: ${response.status}`);
       }
 
       setIsTyping(false);
@@ -97,25 +83,28 @@ export function useGeminiChat() {
                 updateLastMessage(aiText);
               } else if (data.error) {
                 console.error("Stream Error:", data.error);
-                throw new Error("Stream error from backend");
+                throw new Error(data.error);
               }
             } catch (e) {
-               // wait for next buffer
+               if (e.message !== 'Unexpected end of JSON input') {
+                 // buffer partial chunks
+               }
             }
           }
         }
       }
       
       if (!aiText) {
-          throw new Error("Empty AI response received.");
+          throw new Error("Empty response received from Gemini Safety Assistant.");
       }
 
     } catch (error) {
       if (error.name === 'AbortError') return;
-      console.error('Chat error, using fallback:', error);
+      console.error('Chat API Error:', error);
       setIsTyping(false);
-      const fallbackMsg = fallbackEngine(text);
-      updateLastMessage(fallbackMsg);
+      const errMsg = "Gemini Safety Assistant is temporarily unavailable.";
+      setLastError(error.message || errMsg);
+      updateLastMessage(errMsg);
     } finally {
       abortControllerRef.current = null;
     }
@@ -129,5 +118,5 @@ export function useGeminiChat() {
     }
   };
 
-  return { messages, isTyping, sendMessage, stopGeneration };
+  return { messages, isTyping, lastError, sendMessage, stopGeneration };
 }

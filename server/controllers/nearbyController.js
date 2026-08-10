@@ -1,63 +1,83 @@
+const overpassService = require('../services/overpassService');
+
+function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3; // metres
+  const p1 = lat1 * Math.PI / 180;
+  const p2 = lat2 * Math.PI / 180;
+  const dp = (lat2 - lat1) * Math.PI / 180;
+  const dl = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dp / 2) * Math.sin(dp / 2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 exports.getNearbyHavens = async (req, res, next) => {
   try {
-    const { lat, lng, radius = 2000 } = req.query; // default 2km
+    const { lat, lng, radius = 3000 } = req.query; // default 3km
     if (!lat || !lng) {
       const err = new Error('Latitude and Longitude are required.');
       err.status = 400;
       throw err;
     }
 
-    console.log(`[Nearby Controller] Fetching Overpass Safe Havens within ${radius}m of ${lat}, ${lng}`);
-    
-    // Overpass QL Query for Police, Hospitals, Clinics
-    // [out:json];(node["amenity"="police"](around:2000,lat,lng);node["amenity"="hospital"](around:2000,lat,lng););out body;
-    const query = `
-      [out:json][timeout:10];
-      (
-        node["amenity"="police"](around:${radius},${lat},${lng});
-        way["amenity"="police"](around:${radius},${lat},${lng});
-        node["amenity"="hospital"](around:${radius},${lat},${lng});
-        way["amenity"="hospital"](around:${radius},${lat},${lng});
-        node["amenity"="clinic"](around:${radius},${lat},${lng});
-        node["amenity"="pharmacy"](around:${radius},${lat},${lng});
-        node["amenity"="fire_station"](around:${radius},${lat},${lng});
-      );
-      out center;
-    `;
+    const numericLat = parseFloat(lat);
+    const numericLng = parseFloat(lng);
+    const numericRadius = parseFloat(radius);
 
-    const response = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      body: query,
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json',
-        'User-Agent': 'RakshaNavApp/1.0'
-      }
-    });
+    console.log(`[Nearby Controller] Fetching Safe Havens within ${numericRadius}m of ${numericLat}, ${numericLng}`);
 
-    if (!response.ok) {
-      throw new Error(`Overpass API Error: ${response.statusText}`);
+    // Compute bounding box around point based on radius
+    const latDelta = numericRadius / 111000;
+    const lngDelta = numericRadius / (111000 * Math.cos(numericLat * Math.PI / 180));
+
+    const minLat = numericLat - latDelta;
+    const maxLat = numericLat + latDelta;
+    const minLng = numericLng - lngDelta;
+    const maxLng = numericLng + lngDelta;
+
+    const result = await overpassService.getPOIsForBoundingBox(minLat, minLng, maxLat, maxLng);
+
+    if (result.status === 'unavailable' || !result.data) {
+      return res.json({
+        success: true,
+        count: 0,
+        places: [],
+        status: 'unavailable',
+        warning: result.reason || 'POI service temporarily unavailable'
+      });
     }
 
-    const data = await response.json();
-    
-    const places = data.elements.map(el => {
-      return {
-        id: el.id,
-        lat: el.lat || el.center.lat,
-        lng: el.lon || el.center.lon,
-        name: el.tags.name || el.tags.amenity,
-        type: el.tags.amenity,
-        distance: null // To be calculated on frontend or via turf.js
-      };
-    });
-    
-    res.json({
+    // Filter relevant safe havens within radius
+    const allowedCategories = new Set(['police', 'hospital', 'pharmacy', 'fire_station', 'atm']);
+
+    const places = result.data
+      .filter(p => allowedCategories.has(p.category))
+      .map(p => {
+        const distM = calculateHaversineDistance(numericLat, numericLng, p.lat, p.lng);
+        return {
+          id: p.id,
+          lat: p.lat,
+          lng: p.lng,
+          name: p.name,
+          category: p.category,
+          type: p.category === 'hospital' ? 'hospital' : p.category === 'police' ? 'police' : p.type,
+          distance: Math.round(distM),
+          distanceKm: Number((distM / 1000).toFixed(2)),
+          source: 'overpass'
+        };
+      })
+      .filter(p => p.distance <= numericRadius)
+      .sort((a, b) => a.distance - b.distance);
+
+    return res.json({
       success: true,
       count: places.length,
-      places: places
+      places: places,
+      status: 'available'
     });
+
   } catch (error) {
     next(error);
   }
 };
+

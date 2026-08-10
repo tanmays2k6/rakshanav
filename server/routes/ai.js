@@ -13,7 +13,8 @@ router.post('/analyze-hazard-image', aiController.analyzeHazardImage);
 router.post('/expand-description', aiController.expandHazardDescription);
 router.post('/trip-insights', aiController.generateTripInsights);
 
-// Independent testing route
+// Independent testing & health check routes
+router.get('/health', aiController.healthCheck);
 router.get('/test-gemini', aiController.testConnection);
 
 module.exports = router;

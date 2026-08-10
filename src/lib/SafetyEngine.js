@@ -82,7 +82,7 @@ export const SafetyEngine = {
   },
 
   _calculateEmergencyScore(infra, distanceKm) {
-    if (!infra || (infra.police === null && infra.hospitals === null)) return null;
+    if (!infra || infra.status === 'unavailable' || (infra.police === null && infra.hospitals === null)) return null;
     const police = Array.isArray(infra.police) ? infra.police.length : (infra.police || 0);
     const hospitals = Array.isArray(infra.hospitals) ? infra.hospitals.length : (infra.hospitals || 0);
     const pharmacies = Array.isArray(infra.pharmacies) ? infra.pharmacies.length : (infra.pharmacies || 0);
@@ -98,7 +98,7 @@ export const SafetyEngine = {
   },
 
   _calculateLightingScore(infra, isNightTime, distanceKm) {
-    if (!infra || infra.commercial === null) return null;
+    if (!infra || infra.status === 'unavailable' || infra.commercial === null) return null;
     const commercial = infra.commercial || 0;
     if (!isNightTime) return 100;
     

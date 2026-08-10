@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import Map, { Source, Layer, Marker, useMap } from 'react-map-gl/maplibre'
+import Map, { Source, Layer, Marker, Popup, useMap } from 'react-map-gl/maplibre'
 import { locationService } from '../services/locationService'
 import { mapService } from '../services/mapService'
 import { geminiService } from '../services/geminiService'
@@ -76,6 +76,7 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
   const { user } = useAuth()
   const [darkMode,     setDarkMode]     = useState(true)
   const [phase,        setPhase]        = useState('idle')
+  const [activeLocationField, setActiveLocationField] = useState(null)
   
   // GPS State
   const [useGps,       setUseGps]       = useState(true)
@@ -99,10 +100,14 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
   const [routeFallbacks, setRouteFallbacks] = useState({})
   const [isAiLoading,  setIsAiLoading]  = useState(false)
   const [devDiagnostics, setDevDiagnostics] = useState(null)
+  const [showDevDiagnostics, setShowDevDiagnostics] = useState(false)
   
-  // Navigation State
+  // Navigation & Session State
   const [activeTrip, setActiveTrip] = useState(null)
   const [isEndingTrip, setIsEndingTrip] = useState(false)
+  const [selectedPoi, setSelectedPoi] = useState(null)
+  const activeRequestIdRef = useRef(null)
+  const abortControllerRef = useRef(null)
   
   // Jurisdictions State
   const [jurisdictionsData, setJurisdictionsData] = useState(null)
@@ -176,7 +181,7 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
     }
   }, [showJurisdictions, jurisdictionsData]);
 
-  // ── Route search ─────────────────────────────────────────────────────────
+  // ── Route search (One Deterministic Pipeline) ────────────────────────────
   const handleSearch = useCallback(async (forcedFrom, forcedTo, isGpsActive) => {
     const fVal = forcedFrom !== undefined ? forcedFrom : fromVal;
     const tVal = forcedTo !== undefined ? forcedTo : toVal;
@@ -193,16 +198,27 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
       return;
     }
 
-    setPhase('searching'); setErrorMsg(''); setActiveRouteId('all')
+    // Cancel any previous in-flight search requests
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    const currentRequestId = crypto.randomUUID();
+    activeRequestIdRef.current = currentRequestId;
+
+    setPhase('searching'); 
+    setErrorMsg(''); 
+    setActiveRouteId('all');
     setDevDiagnostics({
       geocodingOrigin: 'pending', geocodingDest: 'pending', boundary: 'pending',
       osrm: 'pending', overpass: 'pending', safety: 'pending', gemini: 'pending'
     });
     
     console.log(`\n==================================================`);
-    console.log(`[ROUTE DEBUG LOGGER] PIPELINE STARTED`);
-    console.log(`Origin Search: ${fVal}`);
-    console.log(`Destination Search: ${tVal}`);
+    console.log(`[RouteScan] requestId=${currentRequestId}`);
+    console.log(`[RouteScan] Origin Search: "${fVal}"`);
+    console.log(`[RouteScan] Destination Search: "${tVal}"`);
 
     try {
       let startCoord;
@@ -212,22 +228,23 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
         startCoord = currentCoords;
         fromShort = 'Current Location';
       } else {
-        setStatusMsg('📍 Resolving origin...')
+        setStatusMsg('📍 Resolving origin...');
         if (fromOpt && fromOpt.display_name === fVal) {
           startCoord = fromOpt;
           fromShort = fromOpt.display_name.split(',')[0];
         } else {
           const res = await locationService.forwardGeocode(fVal);
-          if (res.length === 0) throw new Error("Location not found.");
+          if (res.length === 0) throw new Error("Origin location not found.");
           startCoord = res[0];
           fromShort = startCoord.display_name.split(',')[0];
         }
       }
       
-      console.log(`Origin Coordinates resolved: ${startCoord.lat}, ${startCoord.lng} (${startCoord.display_name || fromShort})`);
+      if (activeRequestIdRef.current !== currentRequestId) return;
+      console.log(`[RouteScan] Origin Coordinates: ${startCoord.lat}, ${startCoord.lng} (${fromShort})`);
       setDevDiagnostics(prev => ({ ...prev, geocodingOrigin: 'success' }));
 
-      setStatusMsg('📍 Resolving destination...')
+      setStatusMsg('📍 Resolving destination...');
       let endCoord;
       let toShort;
       try {
@@ -236,11 +253,12 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
           toShort = toOpt.display_name.split(',')[0];
         } else {
           const res = await locationService.forwardGeocode(tVal);
-          if (res.length === 0) throw new Error("Location not found.");
+          if (res.length === 0) throw new Error("Destination location not found.");
           endCoord = res[0];
           toShort = endCoord.display_name.split(',')[0];
         }
-        console.log(`Destination Coordinates resolved: ${endCoord.lat}, ${endCoord.lng} (${endCoord.display_name || toShort})`);
+        if (activeRequestIdRef.current !== currentRequestId) return;
+        console.log(`[RouteScan] Destination Coordinates: ${endCoord.lat}, ${endCoord.lng} (${toShort})`);
         setDevDiagnostics(prev => ({ ...prev, geocodingDest: 'success' }));
       } catch (err) {
         setDevDiagnostics(prev => ({ ...prev, geocodingDest: 'error' }));
@@ -248,35 +266,25 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
       }
       
       const isBoundaryValid = isWithinBengaluru(endCoord.lat, endCoord.lng) && isWithinBengaluru(startCoord.lat, startCoord.lng);
-      console.log(`Inside Bengaluru: ${isBoundaryValid ? 'TRUE' : 'FALSE'}`);
-      
       if (!isBoundaryValid) {
         setDevDiagnostics(prev => ({ ...prev, boundary: 'error' }));
         throw new Error("Outside supported area.");
       }
       setDevDiagnostics(prev => ({ ...prev, boundary: 'success' }));
 
-      setStatusMsg('🚀 Routing starts...')
+      setStatusMsg('🚀 Generating route alternatives...');
       let response;
       try {
-        response = await mapService.getRoute(startCoord.lat, startCoord.lng, endCoord.lat, endCoord.lng, 'driving')
+        response = await mapService.getRoute(startCoord.lat, startCoord.lng, endCoord.lat, endCoord.lng, 'driving', abortController.signal);
+        if (activeRequestIdRef.current !== currentRequestId) return;
+        
         setDevDiagnostics(prev => ({ ...prev, 
           osrm: response.diagnostics?.osrm?.status || 'success',
           overpass: response.diagnostics?.overpass?.status || 'success',
           safety: response.diagnostics?.safety?.status || 'success'
         }));
-        console.log(`OSRM Request URL: ${response.diagnostics?.osrm?.url || 'N/A'}`);
-        console.log(`OSRM Route Count: ${response.diagnostics?.osrm?.routes || response.routes?.length}`);
-        console.log(`OSRM Response Time: ${response.diagnostics?.osrm?.time || 0}ms`);
-        console.log(`Overpass Status: ${response.diagnostics?.overpass?.status || 'success'} (${response.diagnostics?.overpass?.time || 0}ms)`);
-        if (response.routes && response.routes[0]) {
-           const inf = response.routes[0].infrastructure;
-           console.log(`Hospitals found: ${inf?.hospitals ?? 0}`);
-           console.log(`Police found: ${inf?.police ?? 0}`);
-           console.log(`Commercial establishments: ${inf?.commercial ?? 0}`);
-           console.log(`Metro Stations: ${inf?.metro ?? 0}`);
-        }
       } catch (err) {
+        if (err.name === 'AbortError') return;
         setDevDiagnostics(prev => ({ ...prev, osrm: 'error' }));
         throw err;
       }
@@ -285,113 +293,164 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
         throw new Error("No practical road connection exists between these locations.");
       }
 
-      setStatusMsg('🛡 Analyzing safety metrics...')
+      if (activeRequestIdRef.current !== currentRequestId) return;
 
+      setStatusMsg('🚀 Rendering routes...');
+
+      // 1. Initial Candidate Setup (Skeleton metrics)
+      let routesWithTypes = [...response.routes];
+      
+      routesWithTypes.forEach(r => { r.type = 'candidate'; });
+
+      const initialRoutes = routesWithTypes.map(r => ({
+          ...r,
+          distanceRaw: r.distanceRaw || parseFloat(r.distance),
+          durationRaw: r.durationRaw || parseInt(r.duration),
+          infrastructure: null,
+          infrastructureStatus: 'loading',
+          reports: null,
+          score: null,
+          confidence: null,
+          breakdown: null,
+          weather: null,
+          jurisdictions: [],
+          nearestSafeHaven: null,
+          metricsLoaded: false
+      }));
+
+      console.log(`[RouteScan] Rendered ${initialRoutes.length} initial route candidates`);
+
+      // 2. Render route geometries immediately
       setRouteData({
-        candidates: response.routes,
-        bounds: getBounds(response.routes),
+        candidates: initialRoutes,
+        bounds: getBounds(initialRoutes),
         start: { lat: startCoord.lat, lng: startCoord.lng, label: fromShort }, 
         end: { lat: endCoord.lat, lng: endCoord.lng, label: toShort },
-        startLabel: fromShort, endLabel: toShort,
-      })
-      
-      setStatusMsg('🛡 Fetching Live Metrics...')
-      setPhase('analyzing') // Block UI on skeletons
-
-      // 1. Fetch metrics in parallel for all routes
-      const metricsPromises = response.routes.map(async (r) => {
-        try {
-          const metrics = await mapService.getRouteMetrics(r.geometry, parseFloat(r.distance), parseInt(r.duration));
-          r.infrastructure = metrics.infrastructure;
-          r.reports = metrics.reports;
-          r.score = metrics.score;
-          r.confidence = metrics.confidence;
-          r.breakdown = metrics.breakdown;
-          r.weather = metrics.weather;
-          r.jurisdictions = metrics.jurisdictions;
-          r.nearestSafeHaven = metrics.nearestSafeHaven;
-          r.metricsLoaded = true;
-        } catch (err) {
-          console.error(`Failed to fetch metrics for ${r.id}:`, err);
-          r.infrastructure = null;
-          r.reports = null;
-          r.score = null;
-          r.jurisdictions = null;
-          r.metricsLoaded = false;
-        }
-        return r;
+        startLabel: fromShort, 
+        endLabel: toShort,
+        requestId: currentRequestId
       });
-
-      await Promise.all(metricsPromises);
-
-      // Re-rank routes based on score and duration
-      response.routes.sort((a, b) => (b.score || 0) - (a.score || 0));
-      if (response.routes.length > 0) response.routes[0].type = 'safest';
-      
-      let fastestRoute = [...response.routes].sort((a, b) => (a.durationRaw || 0) - (b.durationRaw || 0))[0];
-      if (fastestRoute && fastestRoute.id !== response.routes[0].id) {
-         fastestRoute.type = 'fastest';
-      }
-      
-      response.routes.forEach(r => {
-         if (!r.type || r.type === 'pending') r.type = 'balanced';
-      });
-
-      setRouteData(prev => ({ ...prev, candidates: response.routes }));
-      setPhase('results')
-
-      // Trigger AI Analysis independently for each route
+      setPhase('results');
       setIsAiLoading(true);
       setRouteAnalyses({});
       setRouteFallbacks({});
       
-      const analysisPromises = response.routes.map(async (r) => {
+      // 3. Asynchronously fetch metrics for each route
+      let metricsPromises = initialRoutes.map(async (route) => {
+        if (activeRequestIdRef.current !== currentRequestId) return;
+        
+        let metrics;
         try {
-          console.log(`Gemini Request: Analyzing route ${r.id}`);
-          const aiRes = await geminiService.analyzeSingleRoute({
-            source: fromShort,
-            destination: toShort,
-            type: r.type,
-            distance: r.distance,
-            duration: r.duration,
-            safetyScore: r.score ?? 'Unknown',
-            lighting: r.breakdown?.lighting !== undefined ? Math.round(r.breakdown.lighting) + '/100' : 'Unknown',
-            hospitals: Array.isArray(r.infrastructure?.hospitals) ? r.infrastructure.hospitals.length : (r.infrastructure?.hospitals ?? 'Unknown'),
-            police: Array.isArray(r.infrastructure?.police) ? r.infrastructure.police.length : (r.infrastructure?.police ?? 'Unknown'),
-            commercial: r.infrastructure?.commercial ?? 'Unknown',
-            communityReports: r.reports ?? 'Unknown',
-            weather: r.weather && r.weather.isRaining ? 'Raining' : (r.weather && r.weather.isFoggy ? 'Foggy' : 'Clear')
-          });
-          console.log(`Gemini Response [${r.id}]: ${aiRes.analysis.substring(0,50)}... [Fallback: ${aiRes.isFallback}]`);
-          return { id: r.id, analysis: aiRes.analysis, isFallback: aiRes.isFallback, success: true };
+          // Hard timeout for infrastructure request (15s)
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("infrastructure_timeout")), 15000)
+          );
+          
+          metrics = await Promise.race([
+            mapService.getRouteMetrics(route.geometry, route.distanceRaw, route.durationRaw, abortController.signal),
+            timeoutPromise
+          ]);
+        } catch (err) {
+          if (err.name === 'AbortError') return;
+          console.warn(`[RouteScan] Metric timeout/error for route ${route.id}:`, err.message);
+          metrics = {
+            infrastructure: null,
+            infrastructureStatus: err.message === 'infrastructure_timeout' ? 'unavailable' : 'unavailable',
+            reports: null,
+            score: null,
+            confidence: 50,
+            breakdown: null,
+            weather: null,
+            jurisdictions: [],
+            nearestSafeHaven: null,
+          };
+        }
+
+        if (activeRequestIdRef.current !== currentRequestId) return;
+
+        const updatedRouteData = {
+          ...metrics,
+          infrastructureStatus: metrics.infrastructureStatus || (metrics.infrastructure ? 'available' : 'unavailable'),
+          metricsLoaded: true
+        };
+
+        // 4. Progressive State Update for this specific route
+        setRouteData(prev => {
+          if (!prev || prev.requestId !== currentRequestId) return prev;
+          
+          let updatedCandidates = prev.candidates.map(c => 
+            c.id === route.id ? { ...c, ...updatedRouteData } : c
+          );
+
+          // Check if all metrics are loaded
+          const allLoaded = updatedCandidates.every(c => c.metricsLoaded);
+          if (allLoaded) {
+            // Sort by score (descending), fallback to distance (ascending)
+            updatedCandidates.sort((a, b) => {
+              const scoreDiff = (b.score || 0) - (a.score || 0);
+              if (scoreDiff !== 0) return scoreDiff;
+              return (a.distanceRaw || 0) - (b.distanceRaw || 0);
+            });
+
+            updatedCandidates.forEach(c => { c.type = 'balanced'; });
+            
+            if (updatedCandidates.length > 0) {
+              updatedCandidates[0].type = 'safest';
+            }
+            
+            let fastest = [...updatedCandidates].sort((a, b) => (a.durationRaw || 0) - (b.durationRaw || 0))[0];
+            if (fastest && fastest.id !== updatedCandidates[0].id) {
+              fastest.type = 'fastest';
+            }
+          }
+
+          return { ...prev, candidates: updatedCandidates };
+        });
+
+        // 5. Trigger AI for this specific route now that metrics are available
+        try {
+           const aiRes = await geminiService.analyzeSingleRoute({
+             source: fromShort,
+             destination: toShort,
+             type: route.type,
+             distance: route.distance,
+             duration: route.duration,
+             safetyScore: metrics.score ?? 'Unknown',
+             lighting: metrics.breakdown?.lighting !== undefined && metrics.breakdown?.lighting !== null ? Math.round(metrics.breakdown.lighting) + '/100' : 'Unknown',
+             hospitals: Array.isArray(metrics.infrastructure?.hospitals) ? metrics.infrastructure.hospitals.length : (metrics.infrastructure?.hospitals ?? 'Unknown'),
+             police: Array.isArray(metrics.infrastructure?.police) ? metrics.infrastructure.police.length : (metrics.infrastructure?.police ?? 'Unknown'),
+             commercial: metrics.infrastructure?.commercial ?? 'Unknown',
+             communityReports: metrics.reports ?? 'Unknown',
+             weather: metrics.weather && metrics.weather.isRaining ? 'Raining' : (metrics.weather && metrics.weather.isFoggy ? 'Foggy' : 'Clear')
+           });
+           
+           if (activeRequestIdRef.current === currentRequestId) {
+             setRouteAnalyses(prev => ({ ...prev, [route.id]: aiRes.analysis }));
+             setRouteFallbacks(prev => ({ ...prev, [route.id]: aiRes.isFallback }));
+             if (!aiRes.isFallback) {
+               setDevDiagnostics(prev => ({ ...prev, gemini: 'success' }));
+             }
+           }
         } catch (e) {
-          console.log(`Gemini Request Failed [${r.id}]: ${e.message}`);
-          return { id: r.id, analysis: "AI Analysis temporarily unavailable.", isFallback: true, success: false };
+           if (activeRequestIdRef.current === currentRequestId) {
+             setRouteAnalyses(prev => ({ ...prev, [route.id]: "AI Analysis temporarily unavailable." }));
+             setRouteFallbacks(prev => ({ ...prev, [route.id]: true }));
+           }
         }
       });
 
-      Promise.all(analysisPromises).then(results => {
-        const analysesMap = {};
-        const fallbackMap = {};
-        let geminiSuccessCount = 0;
-        results.forEach(res => {
-          analysesMap[res.id] = res.analysis;
-          fallbackMap[res.id] = res.isFallback;
-          // Only count as success if it's NOT a fallback!
-          if (res.success && !res.isFallback) geminiSuccessCount++;
-        });
-        setRouteAnalyses(analysesMap);
-        setRouteFallbacks(fallbackMap);
-        setDevDiagnostics(prev => ({ ...prev, gemini: geminiSuccessCount > 0 ? 'success' : 'error' }));
-        setIsAiLoading(false);
-        console.log(`==================================================\n`);
+      // Turn off overall AI loading spinner when all routes finish their AI calls
+      Promise.all(metricsPromises).finally(() => {
+         if (activeRequestIdRef.current === currentRequestId) {
+             setIsAiLoading(false);
+         }
       });
 
     } catch (err) {
-      console.log(`[DEBUG] Pipeline Error: ${err.message}`);
-      console.log(`==================================================\n`);
-      setErrorMsg(`⚠ ${err.message || 'Routing failed.'}`)
-      setPhase('error')
+      if (err.name === 'AbortError') return;
+      console.log(`[RouteScan] Error: ${err.message}`);
+      setErrorMsg(`⚠ ${err.message || 'Routing failed.'}`);
+      setPhase('error');
     }
   }, [fromVal, toVal, useGps, currentCoords, fromOpt, toOpt])
 
@@ -467,47 +526,137 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
     return '#3b82f6'; // Blue for balanced
   }
 
-  const handleStartNavigation = (route) => {
-    setActiveTrip({
+  // Restore Active Navigation Trip Session on Reload / Navigation
+  useEffect(() => {
+    try {
+      const savedSession = localStorage.getItem('rakshanav_active_trip');
+      if (savedSession) {
+        const sessionData = JSON.parse(savedSession);
+        if (sessionData && sessionData.activeTrip && sessionData.routeData) {
+          setActiveTrip(sessionData.activeTrip);
+          setRouteData(sessionData.routeData);
+          setPhase('navigating');
+        }
+      }
+    } catch (e) {
+      console.warn('[UserView] Failed to restore active trip session:', e);
+    }
+  }, []);
+
+  const handleStartNavigation = async (route) => {
+    const startedAt = new Date().toISOString();
+    
+    // Create initial trip record in Supabase with status 'in_progress'
+    let dbTripId = null;
+    if (user && routeData) {
+      try {
+        const initialTripPayload = {
+          user_id: user.id,
+          origin_name: routeData.startLabel || 'Current Location',
+          origin_lat: routeData.start?.lat || (currentCoords ? currentCoords.lat : 12.9716),
+          origin_lng: routeData.start?.lng || (currentCoords ? currentCoords.lng : 77.5946),
+          destination_name: routeData.endLabel || 'Destination',
+          destination_lat: routeData.end?.lat || 12.9716,
+          destination_lng: routeData.end?.lng || 77.5946,
+          distance_km: parseFloat(route.distance?.replace(/[^\d.]/g, '')) || 0,
+          duration_minutes: parseInt(route.duration?.replace(/[^\d]/g, '')) || 0,
+          route_type: route.type || 'safest',
+          safety_score: route.score || 85,
+          route_geometry: { coordinates: route.geometry?.coordinates || [] },
+          lighting_score: route.breakdown?.lighting !== undefined ? `${Math.round(route.breakdown.lighting)}/100` : 'Unknown',
+          hospital_count: Array.isArray(route.infrastructure?.hospitals) ? route.infrastructure.hospitals.length : (route.infrastructure?.hospitals || 0),
+          police_count: Array.isArray(route.infrastructure?.police) ? route.infrastructure.police.length : (route.infrastructure?.police || 0),
+          commercial_count: route.infrastructure?.commercial || 0,
+          weather: route.weather?.isRaining ? 'Raining' : 'Clear',
+          started_at: startedAt,
+          status: 'in_progress'
+        };
+
+        const res = await tripService.startTrip(initialTripPayload);
+        if (res.success && res.data) {
+          dbTripId = res.data.id;
+        }
+      } catch (err) {
+        console.warn('[UserView] Non-blocking error creating start trip record:', err);
+      }
+    }
+
+    const tripState = {
       ...route,
-      started_at: new Date().toISOString()
-    });
+      dbTripId,
+      started_at: startedAt
+    };
+
+    setActiveTrip(tripState);
     setPhase('navigating');
+
+    try {
+      localStorage.setItem('rakshanav_active_trip', JSON.stringify({
+        activeTrip: tripState,
+        routeData
+      }));
+    } catch (e) {
+      console.warn('[UserView] Could not store active trip in localStorage:', e);
+    }
   };
 
   const handleEndTrip = async () => {
-    if (!activeTrip || !user) return;
+    if (!activeTrip) return;
     setIsEndingTrip(true);
     
-    const tripData = {
-      user_id: user.id,
-      origin_name: routeData.startLabel,
-      origin_lat: routeData.start.lat,
-      origin_lng: routeData.start.lng,
-      destination_name: routeData.endLabel,
-      destination_lat: routeData.end.lat,
-      destination_lng: routeData.end.lng,
-      distance_km: parseFloat(activeTrip.distance.replace(/[^\d.]/g, '')) || 0,
-      duration_minutes: parseInt(activeTrip.duration.replace(/[^\d]/g, '')) || 0,
-      route_type: activeTrip.type,
-      safety_score: activeTrip.score || 0,
-      route_geometry: { coordinates: activeTrip.geometry.coordinates },
-      lighting_score: activeTrip.breakdown?.lighting ? `${Math.round(activeTrip.breakdown.lighting)}/100` : 'Unknown',
-      hospital_count: activeTrip.infrastructure?.hospitals || 0,
-      police_count: activeTrip.infrastructure?.police || 0,
-      commercial_count: activeTrip.infrastructure?.commercial || 0,
-      weather: activeTrip.weather?.isRaining ? 'Raining' : 'Clear',
-      started_at: activeTrip.started_at,
-      ended_at: new Date().toISOString()
-    };
+    try {
+      let dbTripId = activeTrip.dbTripId;
+      if (!dbTripId) {
+        try {
+          const stored = localStorage.getItem('rakshanav_active_trip');
+          if (stored) dbTripId = JSON.parse(stored)?.activeTrip?.dbTripId;
+        } catch(e) {}
+      }
 
-    const res = await tripService.saveTrip(tripData);
-    setIsEndingTrip(false);
-    
-    if (res.success) {
-      handleClearResults(); // Reset to idle
-    } else {
-      alert("Failed to save trip: " + res.error);
+      const endedAt = new Date().toISOString();
+      const finalPayload = {
+        ended_at: endedAt,
+        status: 'completed',
+        distance_km: parseFloat(activeTrip.distance?.replace(/[^\d.]/g, '')) || 0,
+        duration_minutes: parseInt(activeTrip.duration?.replace(/[^\d]/g, '')) || 0,
+        safety_score: activeTrip.score || 85
+      };
+
+      if (dbTripId) {
+        await tripService.completeTrip(dbTripId, finalPayload);
+      } else if (user && routeData) {
+        // Fallback: create & complete full record
+        await tripService.saveTrip({
+          user_id: user.id,
+          origin_name: routeData.startLabel || 'Current Location',
+          origin_lat: routeData.start?.lat || 12.9716,
+          origin_lng: routeData.start?.lng || 77.5946,
+          destination_name: routeData.endLabel || 'Destination',
+          destination_lat: routeData.end?.lat || 12.9716,
+          destination_lng: routeData.end?.lng || 77.5946,
+          distance_km: finalPayload.distance_km,
+          duration_minutes: finalPayload.duration_minutes,
+          route_type: activeTrip.type || 'safest',
+          safety_score: finalPayload.safety_score,
+          route_geometry: { coordinates: activeTrip.geometry?.coordinates || [] },
+          lighting_score: activeTrip.breakdown?.lighting ? `${Math.round(activeTrip.breakdown.lighting)}/100` : 'Unknown',
+          hospital_count: Array.isArray(activeTrip.infrastructure?.hospitals) ? activeTrip.infrastructure.hospitals.length : (activeTrip.infrastructure?.hospitals || 0),
+          police_count: Array.isArray(activeTrip.infrastructure?.police) ? activeTrip.infrastructure.police.length : (activeTrip.infrastructure?.police || 0),
+          commercial_count: activeTrip.infrastructure?.commercial || 0,
+          weather: activeTrip.weather?.isRaining ? 'Raining' : 'Clear',
+          started_at: activeTrip.started_at || new Date().toISOString(),
+          ended_at: endedAt,
+          status: 'completed'
+        });
+      }
+    } catch (err) {
+      console.error('[UserView] Error completing trip:', err);
+    } finally {
+      setIsEndingTrip(false);
+      try {
+        localStorage.removeItem('rakshanav_active_trip');
+      } catch (e) {}
+      handleClearResults(); // Reset view to idle
     }
   };
 
@@ -525,8 +674,8 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
         mapStyle={darkMode ? 'https://tiles.openfreemap.org/styles/dark' : 'https://tiles.openfreemap.org/styles/positron'}
         attributionControl={false}
       >
-        {/* Developer Diagnostics Overlay */}
-        {devDiagnostics && (
+        {/* Developer Diagnostics Overlay (Dev Mode Only) */}
+        {showDevDiagnostics && devDiagnostics && (
           <div style={{ position: 'absolute', top: 20, right: 20, background: 'rgba(15,23,42,0.95)', border: '1px solid #334155', borderRadius: '12px', padding: '16px', color: '#e2e8f0', zIndex: 100, fontSize: '12px', fontFamily: "'JetBrains Mono', monospace", boxShadow: '0 10px 25px rgba(0,0,0,0.5)', width: '220px' }}>
             <div style={{ fontWeight: 'bold', color: '#60a5fa', marginBottom: '8px', borderBottom: '1px solid #334155', paddingBottom: '4px' }}>⚙ Developer Diagnostics</div>
             <DiagnosticRow label="Geocoding Origin" status={devDiagnostics.geocodingOrigin} />
@@ -551,8 +700,8 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
           </Marker>
         )}
 
-          {/* Infrastructure Debug Panel (Only visible when a route is selected) */}
-          {activeRouteId !== 'all' && routeData && (
+          {/* Infrastructure Debug Panel (Dev Mode Only) */}
+          {showDevDiagnostics && activeRouteId !== 'all' && routeData && (
             <div id="debug-panel" style={{ 
               position: 'fixed', bottom: '20px', right: '20px', width: 'min(360px, 90vw)',
               backgroundColor: 'rgba(15, 23, 42, 0.95)', border: '1px solid #4ade80', 
@@ -652,26 +801,95 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
             const activeRoute = routeData.candidates.find(r => r.id === currentActiveId);
             if (!activeRoute || !activeRoute.infrastructure) return null;
             
-            const renderPOIs = (poiArray, icon, bg, text, shadow) => {
+            const renderPOIs = (poiArray, icon, bg, text, shadow, categoryName) => {
               if (!poiArray || !Array.isArray(poiArray)) return null;
-              return poiArray.map((poi, idx) => (
-                <Marker key={`${poi.type}-${idx}-${poi.id || idx}`} longitude={poi.lng} latitude={poi.lat}>
-                  <div style={pinStyle(bg, text, shadow)}>
-                    {icon} {poi.name}
-                  </div>
-                </Marker>
-              ));
+              return poiArray.map((poi, idx) => {
+                const poiId = poi.id || `${categoryName}-${idx}-${poi.lat}-${poi.lng}`;
+                const isSelected = selectedPoi && selectedPoi.id === poiId;
+                return (
+                  <Marker 
+                    key={`${poi.type || categoryName}-${idx}-${poiId}`} 
+                    longitude={poi.lng} 
+                    latitude={poi.lat}
+                  >
+                    <div 
+                      title={poi.name}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedPoi({
+                          ...poi,
+                          id: poiId,
+                          icon,
+                          categoryName,
+                          bg,
+                          text
+                        });
+                      }}
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '50%',
+                        background: bg,
+                        border: `2px solid ${text}`,
+                        boxShadow: shadow,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '14px',
+                        cursor: 'pointer',
+                        transform: isSelected ? 'scale(1.25)' : 'scale(1)',
+                        transition: 'transform 0.15s ease',
+                        zIndex: isSelected ? 100 : 1
+                      }}
+                    >
+                      {icon}
+                    </div>
+                  </Marker>
+                );
+              });
             };
 
             return (
               <>
-                {renderPOIs(activeRoute.infrastructure.police, '🛡', '#1e3a8a', '#93c5fd', 'rgba(59,130,246,0.5)')}
-                {renderPOIs(activeRoute.infrastructure.hospitals, '🏥', '#7f1d1d', '#fca5a5', 'rgba(239,68,68,0.5)')}
-                {renderPOIs(activeRoute.infrastructure.fireStations, '🚒', '#7f1d1d', '#fca5a5', 'rgba(239,68,68,0.5)')}
-                {renderPOIs(activeRoute.infrastructure.pharmacies, '💊', '#14532d', '#86efac', 'rgba(34,197,94,0.5)')}
+                {renderPOIs(activeRoute.infrastructure.police, '👮', '#1e3a8a', '#93c5fd', '0 0 12px rgba(59,130,246,0.6)', 'Police Station')}
+                {renderPOIs(activeRoute.infrastructure.hospitals, '🏥', '#7f1d1d', '#fca5a5', '0 0 12px rgba(239,68,68,0.6)', 'Hospital')}
+                {renderPOIs(activeRoute.infrastructure.fireStations, '🚒', '#7c2d12', '#ffedd5', '0 0 12px rgba(249,115,22,0.6)', 'Fire Station')}
+                {renderPOIs(activeRoute.infrastructure.pharmacies, '💊', '#14532d', '#86efac', '0 0 12px rgba(34,197,94,0.6)', 'Pharmacy')}
               </>
             );
           })()
+        )}
+
+        {/* POI Details Popup */}
+        {selectedPoi && (
+          <Popup
+            longitude={selectedPoi.lng}
+            latitude={selectedPoi.lat}
+            closeButton={true}
+            closeOnClick={false}
+            onClose={() => setSelectedPoi(null)}
+            anchor="bottom"
+            offset={16}
+          >
+            <div style={{ padding: '8px 10px', minWidth: '180px', maxWidth: '260px', color: '#0f172a', fontFamily: "'Inter', sans-serif" }}>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: selectedPoi.text === '#93c5fd' ? '#2563eb' : selectedPoi.text === '#fca5a5' ? '#dc2626' : selectedPoi.text === '#86efac' ? '#16a34a' : '#ea580c', textTransform: 'uppercase', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span>{selectedPoi.icon}</span> {selectedPoi.categoryName || 'Safety Facility'}
+              </div>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', marginBottom: '4px', lineHeight: 1.2 }}>
+                {selectedPoi.name || 'Safety Infrastructure'}
+              </div>
+              {selectedPoi.distanceKm !== undefined && (
+                <div style={{ fontSize: '11px', color: '#475569', marginBottom: '2px' }}>
+                  📍 {selectedPoi.distanceKm} km from route
+                </div>
+              )}
+              {selectedPoi.address && (
+                <div style={{ fontSize: '10px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {selectedPoi.address}
+                </div>
+              )}
+            </div>
+          </Popup>
         )}
 
         {/* Layer: Community */}
@@ -737,10 +955,10 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
       </Map>
 
       {/* ── LEFT SIDEBAR ─────────────────────────────────────────────────── */}
-      <div className={`absolute left-4 w-[calc(100%-32px)] md:w-[360px] max-h-[calc(100dvh-160px)] md:max-h-[calc(100dvh-90px)] z-30 flex flex-col gap-2.5 ${isDashboard ? 'top-[72px]' : 'top-4'}`}>
+      <div className={`absolute left-2 right-2 md:left-4 md:right-auto md:w-[380px] max-h-[calc(100dvh-130px)] md:max-h-[calc(100dvh-90px)] z-30 flex flex-col gap-3 ${isDashboard ? 'top-[64px]' : 'top-4'} pb-[80px] md:pb-0 overflow-y-auto custom-scrollbar`}>
 
         {/* Search form */}
-        <div style={{ ...card({ padding: '20px' }), flexShrink: 0 }}>
+        <div style={{ ...card({ padding: '20px' }), flexShrink: 0, position: 'relative', zIndex: 40 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: '16px', color: txt('#fff', '#111') }}>Safe Route Engine</div>
             {phase === 'results' && (
@@ -750,7 +968,7 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
 
           <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '16px' }}>
             
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', transition: 'transform 0.3s', transform: swapAnim ? 'translateY(48px)' : 'translateY(0)' }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', transition: 'transform 0.3s', transform: swapAnim ? 'translateY(48px)' : 'translateY(0)', zIndex: activeLocationField === 'origin' ? 50 : 1 }}>
               <div style={{ flex: 1 }}>
                 {useGps ? (
                   <div style={{ background: darkMode ? 'rgba(59,130,246,0.1)' : 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '12px', padding: '12px' }}>
@@ -768,7 +986,7 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <AutocompleteField value={fromVal} onChange={setFromVal} onSelect={setFromOpt} placeholder="Origin..." dot="#3b82f6" dark={darkMode} />
+                    <AutocompleteField value={fromVal} onChange={setFromVal} onSelect={setFromOpt} placeholder="Origin..." dot="#3b82f6" dark={darkMode} onFocus={() => setActiveLocationField('origin')} onBlur={() => setActiveLocationField(null)} />
                     <div style={{ display: 'flex', gap: '4px' }}>
                       <button onClick={() => { if(gpsStatus !== 'denied') setUseGps(true); else requestGPS(); }} style={smallBtn(darkMode)}>
                         📍 My Location
@@ -794,9 +1012,9 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
               </button>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', transition: 'transform 0.3s', transform: swapAnim ? 'translateY(-48px)' : 'translateY(0)' }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', transition: 'transform 0.3s', transform: swapAnim ? 'translateY(-48px)' : 'translateY(0)', zIndex: activeLocationField === 'destination' ? 50 : 1 }}>
               <div style={{ flex: 1 }}>
-                <AutocompleteField value={toVal} onChange={setToVal} onSelect={setToOpt} placeholder="Search Destination..." dot="#22c55e" dark={darkMode} />
+                <AutocompleteField value={toVal} onChange={setToVal} onSelect={setToOpt} placeholder="Search Destination..." dot="#22c55e" dark={darkMode} onFocus={() => setActiveLocationField('destination')} onBlur={() => setActiveLocationField(null)} />
                 {toVal === '' && (
                    <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
                      <button onClick={() => setToVal('Airport')} style={smallBtn(darkMode)}>✈ Airport</button>
@@ -807,14 +1025,14 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
             </div>
           </div>
 
-          <button onClick={() => handleSearch()} disabled={phase === 'searching'} style={{
+          <button onClick={() => handleSearch()} disabled={phase === 'searching' || phase === 'analyzing'} style={{
             width: '100%', padding: '12px',
-            background: phase === 'searching' ? 'rgba(34,197,94,0.35)' : 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+            background: (phase === 'searching' || phase === 'analyzing') ? 'rgba(34,197,94,0.35)' : 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
             border: 'none', borderRadius: '11px', color: '#fff',
             fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '14px',
-            cursor: phase === 'searching' ? 'not-allowed' : 'pointer', transition: 'all 0.2s',
+            cursor: (phase === 'searching' || phase === 'analyzing') ? 'not-allowed' : 'pointer', transition: 'all 0.2s',
           }}>
-            {phase === 'searching' ? <><Spinner />{statusMsg || 'Analyzing...'}</> : '🛡 Scan Safe Routes'}
+            {(phase === 'searching' || phase === 'analyzing') ? <><Spinner /> <span style={{ marginLeft: '6px' }}>{statusMsg || 'Analyzing...'}</span></> : '🛡 Scan Safe Routes'}
           </button>
 
           {phase === 'error' && errorMsg && (
@@ -825,40 +1043,46 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
               )}
             </div>
           )}
-             {/* Main Title & Action */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+        </div>
+
+        {/* Loading Skeletons when analyzing before routeData is populated */}
+        {phase === 'analyzing' && !routeData && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flexShrink: 0 }}>
+            <RouteSkeleton darkMode={darkMode} card={card} />
+            <RouteSkeleton darkMode={darkMode} card={card} />
+          </div>
+        )}
+
+        {/* Safety Intelligence Header & Results cards */}
+        {(phase === 'results' || (phase === 'analyzing' && routeData)) && routeData && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flexShrink: 0 }}>
+            {/* Main Title & Action */}
+            <div style={{ ...card({ padding: '16px' }), display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <h1 style={{ fontSize: '24px', fontWeight: 700, margin: '0 0 4px 0', letterSpacing: '-0.5px' }}>
+                <h1 style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 2px 0', letterSpacing: '-0.5px', color: txt('#fff', '#111') }}>
                   Safety Intelligence
                 </h1>
-                <div style={{ fontSize: '13px', color: sub, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ color: 'transparent' }}>📍</span> 
-                  <span style={{ color: 'white', fontWeight: 500 }}>{routeData?.startLabel}</span>
+                <div style={{ fontSize: '12px', color: sub, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ color: '#60a5fa' }}>📍</span> 
+                  <span style={{ color: txt('#fff', '#334155'), fontWeight: 600 }}>{routeData?.startLabel}</span>
                   <span>→</span>
-                  <span style={{ color: 'white', fontWeight: 500 }}>{routeData?.endLabel}</span>
+                  <span style={{ color: txt('#fff', '#334155'), fontWeight: 600 }}>{routeData?.endLabel}</span>
                 </div>
               </div>
               <button 
                 onClick={handleClearResults}
-                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: sub }}
-                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'}
-                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                style={{ background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '8px', padding: '6px 12px', cursor: 'pointer', color: txt('#e2e8f0', '#475569'), fontSize: '12px', fontWeight: 600 }}
               >
                 ✕ Clear
               </button>
             </div>
-        </div>
-
-        {/* Results cards */}
-        {(phase === 'results' || phase === 'analyzing') && routeData && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto', overflowX: 'hidden', paddingBottom: '20px', scrollbarWidth: 'none' }}>
             
             {/* Route Switcher */}
             <div style={{ ...card({ padding: '4px' }), display: 'flex', gap: '4px', flexShrink: 0 }}>
               <button onClick={() => setActiveRouteId('all')} style={switchStyle('all', activeRouteId, darkMode)}>All Options</button>
               {routeData.candidates.map(r => (
                 <button key={r.id} onClick={() => setActiveRouteId(r.id)} style={switchStyle(r.id, activeRouteId, darkMode)}>
-                  {r.type === 'safest' ? '🛡 Safest' : r.type === 'fastest' ? '⚡ Fast' : '⚖ Balanced'}
+                  {r.type === 'safest' ? '🛡 Safest' : r.type === 'fastest' ? '⚡ Fast' : r.type === 'candidate' ? '⏳ Analyzing...' : '⚖ Balanced'}
                 </button>
               ))}
             </div>
@@ -937,10 +1161,10 @@ const smallBtn = (darkMode) => ({
 function getPoiLabel(poiArray, typeName) {
   if (poiArray === null || poiArray === undefined) return `Data unavailable`;
   if (typeof poiArray === 'number') {
-    return poiArray === 0 ? `None nearby` : `${poiArray} ${typeName}`;
+    return poiArray === 0 ? `0 ${typeName}` : `${poiArray} ${typeName}`;
   }
   if (Array.isArray(poiArray)) {
-    return poiArray.length === 0 ? `None nearby` : `${poiArray.length} ${typeName}`;
+    return poiArray.length === 0 ? `0 ${typeName}` : `${poiArray.length} ${typeName}`;
   }
   return `Data unavailable`;
 }
@@ -958,19 +1182,30 @@ function RouteCard({ data, darkMode, sub, card, txt, color, routeAnalyses, route
             {data.duration} • {data.distance}
           </div>
         </div>
-        <ScoreRing score={Math.round((data.score ?? 0) / 10)} color={color} />
+        <ScoreRing score={data.score} color={color} />
       </div>
       
       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
         <Pill label={getPoiLabel(data.infrastructure?.police, 'Police')} icon="👮" color={color} />
         <Pill label={getPoiLabel(data.infrastructure?.hospitals, 'Hospitals')} icon="🏥" color={color} />
-        <Pill label={`${data.breakdown?.lighting !== undefined && data.breakdown.lighting !== null ? Math.round(data.breakdown.lighting) + '/100' : 'Unknown'} Light`} icon="💡" color={color} />
-        <Pill label={`${data.reports !== null && data.reports !== undefined ? data.reports : 'Data unavailable'} Reports`} icon="⚠️" color={color} />
+        <Pill label={data.breakdown?.lighting !== undefined && data.breakdown?.lighting !== null ? `${Math.round(data.breakdown.lighting)}/100 Light` : 'Lighting data unavailable'} icon="💡" color={color} />
+        <Pill label={data.reports !== null && data.reports !== undefined ? `${data.reports} Reports` : 'Reports unavailable'} icon="⚠️" color={color} />
         <Pill label={`${data.confidence ?? 0}% Conf`} icon="📊" color={color} />
         {data.jurisdictions && data.jurisdictions.length > 0 && (
           <Pill label={`${data.jurisdictions.length} Police Jurisdictions`} icon="🛡" color={color} />
         )}
       </div>
+
+      {data.infrastructure?.status === 'partial' && (
+        <div style={{ padding: '8px 12px', background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', borderRadius: '8px', marginBottom: '12px', fontSize: '11px', color: '#fde047' }}>
+          ⚠️ Some infrastructure data is temporarily unavailable
+        </div>
+      )}
+      {data.infrastructure?.status === 'unavailable' && (
+        <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '8px', marginBottom: '12px', fontSize: '11px', color: '#fca5a5' }}>
+          🛡 Safety infrastructure data temporarily unavailable
+        </div>
+      )}
 
       {data.nearestSafeHaven && (
         <div style={{ padding: '8px 12px', background: `${color}10`, border: `1px solid ${color}30`, borderRadius: '8px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1030,25 +1265,80 @@ const switchStyle = (id, activeId, darkMode) => {
   }
 }
 
-function AutocompleteField({ value, onChange, onSelect, placeholder, dot, dark }) {
+function AutocompleteField({ value, onChange, onSelect, placeholder, dot, dark, onFocus, onBlur }) {
   const [options, setOptions] = useState([]);
   const [showOptions, setShowOptions] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [selectedIndex, setSelectedIndex] = useState(-1);
   const debounceRef = useRef(null);
+  const abortControllerRef = useRef(null);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setShowOptions(false);
+        if (onBlur) onBlur();
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, [onBlur]);
+
+  useEffect(() => {
+    setSelectedIndex(-1);
+  }, [options]);
 
   const fetchOptions = async (query) => {
-    if (!query || query.length < 3) {
+    if (!query || query.trim().length < 2) {
       setOptions([]);
       setIsSearching(false);
+      setShowOptions(false);
       return;
     }
+    
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+
     setIsSearching(true);
+    setSearchError('');
     setShowOptions(true);
+
     try {
       const results = await locationService.forwardGeocode(query);
-      setOptions(results || []);
+      if (results && results.length > 0) {
+        const uniqueResults = [];
+        const seenKeys = new Set();
+        
+        results.forEach(res => {
+          const primaryName = res.display_name ? res.display_name.split(',')[0].trim() : '';
+          const latKey = parseFloat(res.lat).toFixed(4);
+          const lngKey = parseFloat(res.lng).toFixed(4);
+          const key = `${primaryName}_${latKey}_${lngKey}`.toLowerCase();
+          
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            uniqueResults.push(res);
+          }
+        });
+
+        setOptions(uniqueResults.slice(0, 8));
+      } else {
+        setOptions([]);
+      }
     } catch (e) {
-      setOptions([]);
+      if (e.name !== 'AbortError') {
+        console.warn('[AutocompleteField] Geocoding warning:', e.message);
+        setOptions([]);
+        setSearchError("Location search temporarily unavailable.");
+      }
     } finally {
       setIsSearching(false);
     }
@@ -1056,45 +1346,139 @@ function AutocompleteField({ value, onChange, onSelect, placeholder, dot, dark }
 
   const handleInputChange = (val) => {
     onChange(val);
+    setShowOptions(true);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchOptions(val), 400); // 400ms debounce
+    debounceRef.current = setTimeout(() => fetchOptions(val), 350);
   };
 
   const handleSelect = (opt) => {
-    onChange(opt.display_name); // use display_name instead of label for clarity
+    const selectedName = opt.display_name;
+    onChange(selectedName);
     setShowOptions(false);
+    if (onBlur) onBlur();
     onSelect(opt);
   };
 
+  const handleKeyDown = (e) => {
+    if (!showOptions || options.length === 0) return;
+    
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex(prev => (prev < options.length - 1 ? prev + 1 : prev));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex(prev => (prev > 0 ? prev - 1 : 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (selectedIndex >= 0 && selectedIndex < options.length) {
+        handleSelect(options[selectedIndex]);
+      } else {
+        handleSelect(options[0]);
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setShowOptions(false);
+      if (onBlur) onBlur();
+    }
+  };
+
   return (
-    <div style={{ position: 'relative', width: '100%' }}>
-      <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', width: '8px', height: '8px', borderRadius: '50%', background: dot, pointerEvents: 'none' }} />
-      <input value={value} onChange={e => handleInputChange(e.target.value)} onFocus={() => setShowOptions(options.length > 0 || isSearching)} onBlur={() => setTimeout(() => setShowOptions(false), 200)} placeholder={placeholder}
-        style={{ width: '100%', padding: '11px 12px 11px 30px', background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', border: `1px solid ${dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)'}`, borderRadius: '10px', color: dark ? '#e2e8f0' : '#111', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+    <div ref={containerRef} style={{ position: 'relative', width: '100%', zIndex: showOptions ? 9999 : 1 }}>
+      <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', width: '8px', height: '8px', borderRadius: '50%', background: dot, pointerEvents: 'none', zIndex: 2 }} />
+      <input 
+        value={value} 
+        onChange={e => handleInputChange(e.target.value)} 
+        onFocus={() => { 
+          if (onFocus) onFocus();
+          if (value && value.trim().length >= 2) fetchOptions(value); 
+        }}
+        onBlur={() => {
+          if (onBlur) onBlur();
+        }}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        autoComplete="off"
+        spellCheck="false"
+        style={{ 
+          width: '100%', padding: '11px 12px 11px 30px', 
+          background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', 
+          border: `1px solid ${dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)'}`, 
+          borderRadius: '10px', color: dark ? '#e2e8f0' : '#111', 
+          fontSize: '13px', outline: 'none', boxSizing: 'border-box' 
+        }}
       />
-      {showOptions && (isSearching || options.length > 0) && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '4px', background: dark ? '#1e293b' : '#fff', border: `1px solid ${dark ? '#334155' : '#e2e8f0'}`, borderRadius: '8px', zIndex: 100, overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.2)', maxHeight: '200px', overflowY: 'auto' }}>
+      {showOptions && (
+        <div 
+          style={{ 
+            position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, 
+            background: dark ? '#0f172a' : '#ffffff', 
+            border: `1px solid ${dark ? '#334155' : '#cbd5e1'}`, 
+            borderRadius: '12px', zIndex: 9999, overflow: 'hidden', 
+            boxShadow: '0 12px 32px rgba(0,0,0,0.5)', 
+            maxHeight: window.innerWidth < 768 ? '260px' : '300px', 
+            overflowY: 'auto' 
+          }}
+        >
           {isSearching ? (
-             <div style={{ padding: '10px 12px', fontSize: '12px', color: dark ? '#94a3b8' : '#64748b' }}>
-               Searching...
+             <div style={{ padding: '12px 14px', fontSize: '13px', color: dark ? '#94a3b8' : '#64748b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+               <Spinner /> Searching locations...
              </div>
+          ) : options.length > 0 ? (
+            options.map((opt, i) => {
+              const parts = opt.display_name ? opt.display_name.split(',') : ['Location'];
+              const primaryName = parts[0].trim();
+              const secondaryName = parts.slice(1).join(',').trim();
+              const isSelected = i === selectedIndex;
+              return (
+                <div 
+                  key={i} 
+                  onMouseDown={(e) => { e.preventDefault(); handleSelect(opt); }} 
+                  onTouchStart={(e) => { e.preventDefault(); handleSelect(opt); }}
+                  onMouseEnter={() => setSelectedIndex(i)}
+                  style={{ 
+                    padding: '10px 12px', minHeight: '56px', display: 'flex', flexDirection: 'column', justifyContent: 'center',
+                    cursor: 'pointer', borderBottom: i === options.length - 1 ? 'none' : `1px solid ${dark ? '#1e293b' : '#f1f5f9'}`, 
+                    background: isSelected ? (dark ? '#1e293b' : '#f8fafc') : (dark ? '#0f172a' : '#ffffff') 
+                  }} 
+                >
+                  <div style={{ fontWeight: 600, fontSize: '14px', color: dark ? '#f8fafc' : '#0f172a', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '16px' }}>📍</span> 
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{primaryName}</span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: dark ? '#94a3b8' : '#64748b', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden', marginLeft: '22px' }}>
+                    {secondaryName || 'Bengaluru, Karnataka'}
+                  </div>
+                </div>
+              );
+            })
+          ) : searchError ? (
+            <div style={{ padding: '12px 14px', fontSize: '13px', color: '#f87171' }}>
+              {searchError}
+            </div>
           ) : (
-            options.map((opt, i) => (
-              <div key={i} onClick={() => handleSelect(opt)} style={{ padding: '10px 12px', fontSize: '12px', color: dark ? '#e2e8f0' : '#111', cursor: 'pointer', borderBottom: i === options.length - 1 ? 'none' : `1px solid ${dark ? '#334155' : '#e2e8f0'}`, background: dark ? '#1e293b' : '#fff' }} onMouseEnter={e => e.currentTarget.style.background = dark ? '#334155' : '#f1f5f9'} onMouseLeave={e => e.currentTarget.style.background = dark ? '#1e293b' : '#fff'}>
-                <div style={{ fontWeight: 600, marginBottom: '2px' }}>{opt.display_name.split(',')[0]}</div>
-                <div style={{ fontSize: '10px', color: dark ? '#94a3b8' : '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{opt.display_name}</div>
-              </div>
-            ))
+            <div style={{ padding: '12px 14px', fontSize: '13px', color: dark ? '#94a3b8' : '#64748b' }}>
+              No matching locations found
+            </div>
           )}
         </div>
       )}
     </div>
-  )
+  );
 }
 
 function ScoreRing({ score, color }) {
-  const r = 22, stroke = 4, circ = 2 * Math.PI * r
-  const pct = Math.min(1, score / 10) * circ
+  if (score === null || score === undefined) {
+    return (
+      <div style={{ position: 'relative', width: '56px', height: '56px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.05)', borderRadius: '50%', border: `1px solid ${color}30` }}>
+        <div style={{ fontSize: '9px', color: '#94a3b8', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace" }}>N/A</div>
+      </div>
+    );
+  }
+  const rawScore = typeof score === 'number' ? score : (parseFloat(score) || 0);
+  const normalizedTen = rawScore > 10 ? rawScore / 10 : rawScore;
+  const displayScore = normalizedTen.toFixed(1);
+  const r = 22, stroke = 4, circ = 2 * Math.PI * r;
+  const pct = Math.min(1, Math.max(0, normalizedTen / 10)) * circ;
   return (
     <div style={{ position: 'relative', width: '56px', height: '56px', flexShrink: 0 }}>
       <svg width="56" height="56" style={{ transform: 'rotate(-90deg)' }}>
@@ -1102,11 +1486,11 @@ function ScoreRing({ score, color }) {
         <circle cx="28" cy="28" r={r} fill="none" stroke={color} strokeWidth={stroke} strokeDasharray={circ} strokeDashoffset={circ - pct} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 1.2s ease' }} />
       </svg>
       <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '15px', fontWeight: 700, color, lineHeight: 1 }}>{score}</div>
+        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '14px', fontWeight: 700, color, lineHeight: 1 }}>{displayScore}</div>
         <div style={{ fontSize: '8px', color: '#4a7aab', fontFamily: "'JetBrains Mono', monospace" }}>/10</div>
       </div>
     </div>
-  )
+  );
 }
 
 function Pill({ label, icon, color }) {

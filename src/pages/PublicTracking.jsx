@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { MapContainer, TileLayer, Marker, Polyline, Circle, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { Battery, Navigation2, Activity, Clock, MapPin } from 'lucide-react';
+import { Battery, Navigation2, Activity, Clock } from 'lucide-react';
 import Logo from '../components/Logo';
 
 // Fix for Leaflet default icons in React
@@ -35,35 +35,81 @@ function MapUpdater({ center, autoFollow, onDrag }) {
   return null;
 }
 
-export default function PublicTracking() {
-  const { token } = useParams();
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("PublicTracking Error Boundary Caught:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-[#080c12] flex flex-col items-center justify-center p-6 text-center">
+          <div className="mb-6 opacity-50 grayscale">
+            <Logo size="xl" />
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-2">RakshaNav Live Tracking</h2>
+          <p className="text-gray-400 mb-6">Something went wrong while loading this tracking session.</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="bg-brand-blue hover:bg-blue-600 text-white px-6 py-2 rounded-full font-bold shadow-lg transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function PublicTrackingInner() {
+  const { trackingToken } = useParams();
   const [session, setSession] = useState(null);
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [status, setStatus] = useState('connecting');
+  const [autoFollow, setAutoFollow] = useState(true);
 
   useEffect(() => {
     let subscription = null;
 
-        const fetchSession = async () => {
-      // 1. Fetch Session
-      const { data: sessionDataArray, error: sessionError } = await supabase
-        .rpc('get_live_session_by_token', { p_token: token });
-      const sessionData = sessionDataArray?.[0];
+    if (!trackingToken) {
+      setError('Tracking Link Invalid');
+      setLoading(false);
+      return;
+    }
 
-      if (sessionError) {
-        if (process.env.NODE_ENV === 'development') {
-          console.error("Live Tracking Error [live_sessions]:", sessionError);
+    const fetchSession = async () => {
+      let sessionData = null;
+
+      try {
+        const { data: rpcData, error: rpcError } = await supabase
+          .rpc('get_live_session_by_token', { p_token: trackingToken });
+        if (!rpcError && rpcData && rpcData.length > 0) {
+          sessionData = rpcData[0];
         }
-        // PGRST116 is thrown when .single() finds no rows.
-        if (sessionError.code === 'PGRST116') {
-           setError('Tracking Link Invalid');
-        } else {
-           setError('Live tracking service is temporarily unavailable.');
-        }
-        setLoading(false);
-        return;
+      } catch (e) {
+        console.warn('[PublicTracking] RPC lookup warning, trying table fallback:', e);
+      }
+
+      if (!sessionData) {
+        // Fallback SELECT directly from live_sessions table
+        const { data: directData } = await supabase
+          .from('live_sessions')
+          .select('*')
+          .eq('share_token', trackingToken)
+          .maybeSingle();
+        sessionData = directData;
       }
       
       if (!sessionData) {
@@ -77,8 +123,9 @@ export default function PublicTracking() {
         setLoading(false);
         return;
       }
-      if (sessionData.expires_at && new Date(sessionData.expires_at) < new Date()) {
-        setError('Tracking Link Expired');
+      
+      if (sessionData.expires_at && new Date(sessionData.expires_at) <= new Date()) {
+        setError('Tracking Session Expired');
         setLoading(false);
         return;
       }
@@ -86,11 +133,21 @@ export default function PublicTracking() {
       setSession(sessionData);
 
       // 2. Fetch last 100 historical locations
-      const { data: locData, error: locError } = await supabase
-        .rpc('get_live_locations_by_session', { p_session_id: sessionData.id });
+      let locData = null;
+      try {
+        const { data: rpcLocs } = await supabase
+          .rpc('get_live_locations_by_session', { p_session_id: sessionData.id });
+        locData = rpcLocs;
+      } catch(e) {}
 
-      if (locError && process.env.NODE_ENV === 'development') {
-        console.error("Live Tracking Error [live_locations]:", locError);
+      if (!locData || locData.length === 0) {
+        const { data: directLocs } = await supabase
+          .from('live_locations')
+          .select('*')
+          .eq('session_id', sessionData.id)
+          .order('timestamp', { ascending: false })
+          .limit(100);
+        locData = directLocs;
       }
 
       if (locData && locData.length > 0) {
@@ -133,7 +190,7 @@ export default function PublicTracking() {
           },
           (payload) => {
             if (payload.new.is_active === false) {
-               setError('This live tracking session was ended by the user.');
+               setError('Tracking Ended');
             }
           }
         )
@@ -147,14 +204,17 @@ export default function PublicTracking() {
         supabase.removeChannel(subscription);
       }
     };
-  }, [token]);
+  }, [trackingToken]);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#080c12] flex items-center justify-center font-mono text-brand-blue">
+      <div className="min-h-screen bg-[#080c12] flex flex-col items-center justify-center p-6 text-center font-mono text-brand-blue">
+        <div className="mb-6 opacity-50 grayscale">
+          <Logo size="xl" />
+        </div>
         <div className="flex items-center gap-3">
           <div className="w-5 h-5 rounded-full border-2 border-brand-blue border-t-transparent animate-spin"></div>
-          Securing Connection...
+          Connecting to RakshaNav Live Tracking...
         </div>
       </div>
     );
@@ -166,16 +226,31 @@ export default function PublicTracking() {
         <div className="mb-6 opacity-50 grayscale">
           <Logo size="xl" />
         </div>
-        <h2 className="text-2xl font-bold text-white mb-2">Tracking Inactive</h2>
-        <p className="text-gray-400">{error}</p>
+        <h2 className="text-2xl font-bold text-white mb-2">{error}</h2>
+        <p className="text-gray-400 text-sm max-w-md mb-6">
+          {error === 'Tracking Session Expired' ? 'The live sharing period has ended.' :
+           error === 'Tracking Ended' ? 'The owner has stopped live sharing.' :
+           'This tracking link does not exist or is no longer available.'}
+        </p>
+        <button onClick={() => window.location.href = '/'} className="px-6 py-2 bg-brand-blue hover:bg-blue-600 text-white rounded-full font-bold text-sm transition-colors shadow-lg shadow-brand-blue/20">
+          Go to RakshaNav
+        </button>
       </div>
     );
   }
 
   const latest = locations[locations.length - 1];
-  const center = latest ? [latest.latitude, latest.longitude] : [12.9716, 77.5946];
-  const path = locations.map(l => [l.latitude, l.longitude]);
-  const [autoFollow, setAutoFollow] = useState(true);
+  
+  // Safe checks for map rendering
+  const hasValidLocation = latest && typeof latest.latitude === 'number' && typeof latest.longitude === 'number';
+  const center = hasValidLocation ? [latest.latitude, latest.longitude] : null;
+  const path = locations.filter(l => l && typeof l.latitude === 'number' && typeof l.longitude === 'number').map(l => [l.latitude, l.longitude]);
+  
+  // Safe accessors for HUD
+  const speedDisplay = (latest && typeof latest.speed === 'number') ? (latest.speed * 3.6).toFixed(1) : '--';
+  const headingDisplay = (latest && typeof latest.heading === 'number') ? Math.round(latest.heading) + '°' : '--';
+  const batteryDisplay = (latest && typeof latest.battery === 'number') ? latest.battery + '%' : '--';
+  const accuracyDisplay = (latest && typeof latest.accuracy === 'number') ? `±${Math.round(latest.accuracy)}m` : '';
 
   return (
     <div className="h-screen w-full relative flex flex-col bg-[#080c12]">
@@ -189,82 +264,92 @@ export default function PublicTracking() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-neonGreen opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-brand-neonGreen"></span>
               </div>
-              <span className="text-white font-bold tracking-tight">Live Tracker</span>
+              <span className="text-white font-bold tracking-tight">Live Tracking Active</span>
             </div>
             
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
                 <p className="text-[10px] font-mono text-gray-500 mb-1 flex items-center gap-1"><Activity className="w-3 h-3" /> SPEED</p>
-                <p className="text-lg font-bold text-white">{latest ? (latest.speed * 3.6).toFixed(1) : '--'} <span className="text-xs font-normal text-gray-400">km/h</span></p>
+                <p className="text-lg font-bold text-white">{speedDisplay} <span className="text-xs font-normal text-gray-400">km/h</span></p>
               </div>
               <div>
                 <p className="text-[10px] font-mono text-gray-500 mb-1 flex items-center gap-1"><Navigation2 className="w-3 h-3" /> HEADING</p>
-                <p className="text-lg font-bold text-white">{latest ? Math.round(latest.heading) : '--'}°</p>
+                <p className="text-lg font-bold text-white">{headingDisplay}</p>
               </div>
               <div>
                 <p className="text-[10px] font-mono text-gray-500 mb-1 flex items-center gap-1"><Battery className="w-3 h-3" /> BATTERY</p>
-                <p className="text-lg font-bold text-white">{latest ? latest.battery : '--'}%</p>
+                <p className="text-lg font-bold text-white">{batteryDisplay}</p>
               </div>
               <div>
                 <p className="text-[10px] font-mono text-gray-500 mb-1 flex items-center gap-1"><Clock className="w-3 h-3" /> UPDATED</p>
-                <p className="text-sm font-bold text-white">Live via WebSockets</p>
+                <p className="text-sm font-bold text-white">Live <span className="text-xs font-normal text-gray-400">{accuracyDisplay}</span></p>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Leaflet Map */}
-      <div className="flex-1 w-full z-0">
-        <MapContainer 
-          center={center} 
-          zoom={15} 
-          style={{ height: '100%', width: '100%', background: '#080c12' }}
-          zoomControl={false}
-        >
-          {/* Using a sleek dark OSM variant, CartoDB Dark Matter */}
-          <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          />
-          
-          <MapUpdater 
-            center={latest ? [latest.latitude, latest.longitude] : null} 
-            autoFollow={autoFollow}
-            onDrag={() => setAutoFollow(false)}
-          />
-
-          {!autoFollow && latest && (
-            <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 1000 }}>
-              <button 
-                onClick={() => setAutoFollow(true)}
-                className="bg-brand-blue hover:bg-blue-600 text-white px-4 py-2 rounded-full font-bold shadow-lg flex items-center gap-2 pointer-events-auto transition-colors"
-              >
-                <Navigation2 className="w-4 h-4" /> Recenter
-              </button>
-            </div>
-          )}
-
-          {latest && (
-            <>
-              <Marker position={[latest.latitude, latest.longitude]} />
-              <Circle 
-                center={[latest.latitude, latest.longitude]} 
-                radius={latest.accuracy || 20} 
-                pathOptions={{ color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.2, weight: 1 }}
-              />
-            </>
-          )}
-
-          {path.length > 1 && (
-            <Polyline 
-              positions={path} 
-              pathOptions={{ color: '#22c55e', weight: 4, opacity: 0.8 }} 
+      {/* Main Content Area */}
+      <div className="flex-1 w-full z-0 relative flex items-center justify-center bg-[#080c12]">
+        {!hasValidLocation ? (
+          <div className="text-white opacity-80 font-mono flex flex-col items-center gap-4">
+            <div className="w-8 h-8 rounded-full border-2 border-brand-blue border-t-transparent animate-spin"></div>
+            Waiting for the user's GPS location...
+          </div>
+        ) : (
+          <MapContainer 
+            center={center} 
+            zoom={15} 
+            style={{ height: '100%', width: '100%', background: '#080c12' }}
+            zoomControl={false}
+          >
+            <TileLayer
+              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             />
-          )}
-        </MapContainer>
+            
+            <MapUpdater 
+              center={center} 
+              autoFollow={autoFollow}
+              onDrag={() => setAutoFollow(false)}
+            />
+
+            {!autoFollow && (
+              <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 1000 }}>
+                <button 
+                  onClick={() => setAutoFollow(true)}
+                  className="bg-brand-blue hover:bg-blue-600 text-white px-4 py-2 rounded-full font-bold shadow-lg flex items-center gap-2 pointer-events-auto transition-colors"
+                >
+                  <Navigation2 className="w-4 h-4" /> Recenter
+                </button>
+              </div>
+            )}
+
+            <Marker position={center} />
+            <Circle 
+              center={center} 
+              radius={latest.accuracy || 20} 
+              pathOptions={{ color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.2, weight: 1 }}
+            />
+
+            {path.length > 1 && (
+              <Polyline 
+                positions={path} 
+                pathOptions={{ color: '#22c55e', weight: 4, opacity: 0.8 }} 
+              />
+            )}
+          </MapContainer>
+        )}
       </div>
       
     </div>
+  );
+}
+
+export default function PublicTracking() {
+  return (
+    <ErrorBoundary>
+      <PublicTrackingInner />
+    </ErrorBoundary>
   );
 }

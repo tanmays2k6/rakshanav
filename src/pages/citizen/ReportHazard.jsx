@@ -116,6 +116,7 @@ export default function ReportHazard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [reportId, setReportId] = useState(null);
+  const [submitError, setSubmitError] = useState(null);
   
   // Stats State
   const [stats, setStats] = useState({ total: 0, today: 0, resolved: 0 });
@@ -160,13 +161,26 @@ export default function ReportHazard() {
     fetchStats();
 
     // 3. Subscribe to real-time reports
-    const unsub = hazardService.subscribeToReports((newReport) => {
-      setCommunityReports(prev => [newReport, ...prev]);
+    // hazardService.subscribeToReports now passes (eventType, newRow, oldRow)
+    // so we can add the actual row to state rather than the raw Supabase payload envelope.
+    const unsub = hazardService.subscribeToReports((eventType, newRow) => {
+      if (eventType === 'INSERT' && newRow && newRow.id) {
+        // Normalise coordinate field names: the realtime event returns the raw
+        // table columns (latitude/longitude), not the view aliases (lat/lng).
+        const normalisedRow = {
+          ...newRow,
+          lat: newRow.lat ?? newRow.latitude,
+          lng: newRow.lng ?? newRow.longitude,
+        };
+        setCommunityReports(prev => [normalisedRow, ...prev]);
+      }
+      // Refresh stats on any change event (INSERT/UPDATE/DELETE)
       fetchStats();
     });
 
     return () => unsub();
   }, []);
+
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -214,19 +228,38 @@ export default function ReportHazard() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!position) return;
+    setSubmitError(null);
     
     if (!user) {
-      alert("Authentication required\n\nPlease log in to submit reports.");
-      window.location.href = '/login';
+      setSubmitError('Please sign in before submitting a hazard report.');
       return;
     }
 
     setIsSubmitting(true);
 
     try {
+      // ── DIAGNOSTIC STEP 1: Verify live session ──────────────────────────────
+      if (import.meta.env.DEV) {
+        console.group('[ReportHazard] Submission start');
+        console.log('Auth user ID:', user.id);
+        console.log('Auth user email:', user.email);
+        console.log('Position:', position);
+        console.log('Category:', category);
+        console.log('Priority:', priority);
+        console.log('Is anonymous:', isAnonymous);
+        console.log('Has photo:', !!photo);
+      }
+
+      // ── DIAGNOSTIC STEP 2: Photo upload ─────────────────────────────────────
       let photoUrl = null;
       if (photo) {
-        photoUrl = await hazardService.uploadPhoto(photo);
+        if (import.meta.env.DEV) console.log('[ReportHazard] Starting photo upload to hazards bucket...');
+        photoUrl = await hazardService.uploadPhoto(photo, user.id);
+        if (!photoUrl) {
+          console.warn('[ReportHazard] Photo upload failed — submitting without photo.');
+        } else {
+          if (import.meta.env.DEV) console.log('[ReportHazard] Photo uploaded OK:', photoUrl);
+        }
       }
 
       // Calculate simple impact score
@@ -234,43 +267,87 @@ export default function ReportHazard() {
       if (priority === 'high' || priority === 'critical') impactScore = 'High';
       else if (priority === 'medium') impactScore = 'Medium';
 
+      // ── DIAGNOSTIC STEP 3: Build payload ────────────────────────────────────
       const reportData = {
-        user_id: user && !isAnonymous ? user.id : null,
+        // IMPORTANT: Always send the authenticated user's UUID.
+        // Anonymous reports use is_anonymous=true to hide identity publicly.
+        // Setting user_id=null violates RLS (auth.uid() = user_id fails).
+        user_id: user.id,
         title: `${category} Report`,
         category,
         priority: priority.charAt(0).toUpperCase() + priority.slice(1),
         latitude: position[0],
         longitude: position[1],
         address,
-        city: 'Bengaluru', // Defaulting since reverse geocode might not isolate city easily here
+        city: 'Bengaluru',
         description,
         photo_url: photoUrl,
         severity: impactScore,
         is_anonymous: isAnonymous
+        // created_at intentionally omitted — use database default (NOW())
       };
 
+      if (import.meta.env.DEV) {
+        console.log('[ReportHazard] INSERT payload:', {
+          ...reportData,
+          // Confirm user_id is a UUID, not null/email
+          user_id_type: typeof reportData.user_id,
+          user_id_matches_auth: reportData.user_id === user.id
+        });
+      }
+
+      // ── DIAGNOSTIC STEP 4: Submit ────────────────────────────────────────────
       const res = await hazardService.submitReport(reportData);
+
+      if (import.meta.env.DEV) {
+        console.log('[ReportHazard] submitReport result:', res);
+        console.groupEnd();
+      }
+
       if (res.success) {
         setReportId(res.id);
+        setSubmitError(null);
         setSubmitted(true);
       } else {
-        const errorMsg = res.error?.toLowerCase() || '';
-        if (res.code === '42501' || errorMsg.includes('rls') || errorMsg.includes('row-level security') || errorMsg.includes('permission denied')) {
-           alert("Database Error:\npermission denied");
-        } else if (errorMsg.includes('null value in column') || errorMsg.includes('violates not-null constraint')) {
-           const match = res.error.match(/column "([^"]+)"/);
-           alert(`Missing required field:\n${match ? match[1] : 'unknown field'}`);
+        const code = res.code || '';
+        const msg = (res.error || '').toLowerCase();
+        const hint = (res.details || '').toLowerCase();
+
+        if (code === 'SESSION_EXPIRED') {
+          setSubmitError('Your session has expired. Please sign in again to submit reports.');
+        } else if (code === '42501' || msg.includes('permission denied')) {
+          // 42501 = insufficient_privilege in PostgreSQL.
+          // This is most commonly caused by:
+          //   • Missing GRANT INSERT on incident_reports to authenticated
+          //   • A trigger trying to INSERT into incident_updates without SECURITY DEFINER
+          // The 1006 migration fixes both. Do NOT tell users to sign out — that won't help.
+          setSubmitError(
+            'Your account is authenticated but the database rejected the report. ' +
+            'This is a server configuration issue. Please contact support if this persists.'
+          );
+        } else if (msg.includes('null value in column') || msg.includes('violates not-null constraint')) {
+          const match = res.error.match(/column "([^"]+)"/);
+          setSubmitError(`Missing required field: ${match ? match[1] : 'unknown'}. Please fill all required fields.`);
+        } else if (msg.includes('foreign key') || msg.includes('violates foreign key')) {
+          setSubmitError('Your account profile could not be found. Please contact support.');
+        } else if (msg.includes('network') || msg.includes('fetch')) {
+          setSubmitError('Network error. Please check your connection and try again.');
         } else {
-           alert(`Database Error:\n${res.error}`);
+          setSubmitError('Unable to submit hazard report. Your report could not be saved. Please try again.');
         }
+        // NOTE: Form state is intentionally NOT reset on failure so the user can retry.
       }
     } catch (err) {
-      console.error(err);
-      alert("An error occurred during submission.");
+      if (import.meta.env.DEV) {
+        console.error('[ReportHazard] Unexpected error:', err);
+        console.groupEnd();
+      }
+      setSubmitError('An unexpected error occurred. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
   };
+
 
   return (
     <div className="h-full flex flex-col lg:flex-row gap-0 overflow-hidden rounded-2xl border border-white/10 animate-fade-up">
@@ -472,6 +549,25 @@ export default function ReportHazard() {
               </div>
             </div>
 
+            {/* Submit Error Banner */}
+            {submitError && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-red-400">Unable to submit hazard report</p>
+                  <p className="text-xs text-red-400/80 mt-1 leading-relaxed">{submitError}</p>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setSubmitError(null)} 
+                  className="text-red-400/60 hover:text-red-400 transition-colors shrink-0"
+                  aria-label="Dismiss error"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
             {/* Submit */}
             <button 
               type="submit" 
@@ -513,21 +609,28 @@ export default function ReportHazard() {
             chunkedLoading
             maxClusterRadius={40}
           >
-            {communityReports.map(report => (
-              <Marker 
-                key={report.id} 
-                position={[report.latitude, report.longitude]}
-                icon={reportIcon}
-              >
-                <Tooltip direction="top" offset={[0, -30]} opacity={1}>
-                  <div className="font-sans">
-                    <p className="font-bold text-gray-800">{report.category}</p>
-                    <p className="text-xs text-gray-600">{report.status}</p>
-                    <p className="text-[10px] text-gray-500 mt-1">{report.upvotes} Upvotes</p>
-                  </div>
-                </Tooltip>
-              </Marker>
-            ))}
+            {communityReports.map(report => {
+              // public_incident_view returns lat/lng aliases.
+              // Guard against any report missing coordinates to prevent Leaflet crash.
+              const lat = report.lat ?? report.latitude;
+              const lng = report.lng ?? report.longitude;
+              if (!lat || !lng) return null;
+              return (
+                <Marker 
+                  key={report.id} 
+                  position={[lat, lng]}
+                  icon={reportIcon}
+                >
+                  <Tooltip direction="top" offset={[0, -30]} opacity={1}>
+                    <div className="font-sans">
+                      <p className="font-bold text-gray-800">{report.category}</p>
+                      <p className="text-xs text-gray-600">{report.status}</p>
+                      <p className="text-[10px] text-gray-500 mt-1">{report.upvotes} Upvotes</p>
+                    </div>
+                  </Tooltip>
+                </Marker>
+              );
+            })}
           </MarkerClusterGroup>
 
         </MapContainer>

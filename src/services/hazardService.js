@@ -6,12 +6,12 @@ export const hazardService = {
    * Fetch all active incident reports (limit 500 for performance)
    */
   async getReports() {
+    // NOTE: Do NOT join auth.users from the client — it is not accessible via RLS.
+    // Use public_incident_view for community maps (safe public fields only).
+    // This query is used for the map overlay on the Report Hazard page.
     const { data, error } = await supabase
-      .from('incident_reports')
-      .select(`
-        *,
-        auth_users:user_id ( id )
-      `)
+      .from('public_incident_view')
+      .select('id, category, status, lat, lng, latitude, longitude, upvotes, created_at')
       .order('created_at', { ascending: false })
       .limit(500);
       
@@ -95,16 +95,18 @@ export const hazardService = {
   /**
    * Upload an image to the Supabase Storage bucket 'hazards'
    */
-  async uploadPhoto(file) {
+  async uploadPhoto(file, userId) {
     if (!file) return null;
     
-    // Generate a unique filename using timestamp and random string
+    // Scope upload path to the authenticated user's UUID.
+    // This ensures storage policies can be user-scoped if needed.
     const ext = file.name.split('.').pop();
     const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${ext}`;
+    const storagePath = userId ? `${userId}/${fileName}` : `public/${fileName}`;
     
     const { data, error } = await supabase.storage
       .from('hazards')
-      .upload(`public/${fileName}`, file, {
+      .upload(storagePath, file, {
         cacheControl: '3600',
         upsert: false
       });
@@ -117,7 +119,7 @@ export const hazardService = {
     // Get public URL
     const { data: urlData } = supabase.storage
       .from('hazards')
-      .getPublicUrl(`public/${fileName}`);
+      .getPublicUrl(storagePath);
       
     return urlData.publicUrl;
   },
@@ -126,8 +128,17 @@ export const hazardService = {
    * Submit a new hazard/incident report
    */
   async submitReport(reportData) {
+    // Verify the session is still live before attempting the insert.
+    // This catches expired tokens early and gives a clean error.
+    const { data: { user }, error: sessionError } = await supabase.auth.getUser();
+    if (sessionError || !user) {
+      return { 
+        success: false, 
+        error: 'Your session has expired. Please sign in again.', 
+        code: 'SESSION_EXPIRED' 
+      };
+    }
 
-    
     const { error, data } = await supabase
       .from('incident_reports')
       .insert([reportData])
@@ -137,11 +148,13 @@ export const hazardService = {
     if (error) {
       if (import.meta.env.DEV) {
         console.error('[Supabase] Error submitting report:', error);
+        console.error('[Supabase] Error code:', error.code);
+        console.error('[Supabase] Error details:', error.details);
+        console.error('[Supabase] Error hint:', error.hint);
       }
-      return { success: false, error: error.message, code: error.code };
+      return { success: false, error: error.message, code: error.code, details: error.details };
     }
     
-
     return { success: true, id: data.id };
   },
 
@@ -166,12 +179,11 @@ export const hazardService = {
    * Fetch Comments for a specific incident
    */
   async getIncidentComments(incidentId) {
+    // NOTE: Do NOT join auth.users — it is blocked by RLS from the client.
+    // Comments only expose the user_id UUID, not the full profile.
     const { data, error } = await supabase
       .from('incident_comments')
-      .select(`
-        *,
-        auth_users:user_id ( id )
-      `)
+      .select('*')
       .eq('incident_id', incidentId)
       .order('created_at', { ascending: false });
 
@@ -185,6 +197,7 @@ export const hazardService = {
   /**
    * Add a comment to an incident
    */
+
   async addComment(incidentId, userId, content) {
     const { error } = await supabase
       .from('incident_comments')
@@ -241,7 +254,9 @@ export const hazardService = {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'incident_reports' },
         (payload) => {
-          onChange(payload);
+          // payload.new contains the actual inserted/updated row.
+          // Pass both the event type and the new row so callers can act accordingly.
+          onChange(payload.eventType || payload.type, payload.new || null, payload.old || null);
         }
       )
       .subscribe();

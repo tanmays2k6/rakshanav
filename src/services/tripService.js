@@ -3,17 +3,31 @@ import { supabase } from '../lib/supabase';
 export const tripService = {
   
   /**
-   * Save a completed trip to Supabase
+   * Start a new trip session in Supabase with status 'in_progress'
    */
-  async saveTrip(tripData) {
-    const { error, data } = await supabase
+  async startTrip(tripData) {
+    if (!tripData.user_id) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return { success: false, error: 'User is not authenticated' };
+      }
+      tripData.user_id = user.id;
+    }
+
+    const payload = {
+      ...tripData,
+      status: 'in_progress',
+      started_at: tripData.started_at || new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
       .from('trip_history')
-      .insert([tripData])
+      .insert([payload])
       .select()
       .single();
 
     if (error) {
-      console.error('Error saving trip:', error);
+      console.error('[tripService] Error starting trip:', error);
       return { success: false, error: error.message };
     }
     
@@ -21,10 +35,85 @@ export const tripService = {
   },
 
   /**
-   * Get trips with optional filtering and sorting
+   * Complete an existing trip session by updating its status to 'completed'
    */
-  async getTrips(timeFilter = 'all', sort = 'newest', search = '') {
-    let query = supabase.from('trip_history').select('*');
+  async completeTrip(tripId, finalData = {}) {
+    if (!tripId) {
+      return { success: false, error: 'Trip ID is required to complete navigation' };
+    }
+
+    const payload = {
+      ...finalData,
+      status: 'completed',
+      ended_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from('trip_history')
+      .update(payload)
+      .eq('id', tripId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[tripService] Error completing trip:', error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, data };
+  },
+
+  /**
+   * Cancel an in-progress trip session
+   */
+  async cancelTrip(tripId) {
+    if (!tripId) return { success: false };
+
+    const { data, error } = await supabase
+      .from('trip_history')
+      .update({ status: 'cancelled', ended_at: new Date().toISOString() })
+      .eq('id', tripId)
+      .select()
+      .single();
+
+    if (error) console.error('[tripService] Error cancelling trip:', error);
+    return { success: !error, data };
+  },
+
+  /**
+   * General save/fallback method (inserts new or updates existing if id provided)
+   */
+  async saveTrip(tripData) {
+    if (!tripData.user_id) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return { success: false, error: 'User not authenticated' };
+      tripData.user_id = user.id;
+    }
+
+    if (tripData.id) {
+      const { id, ...updates } = tripData;
+      return this.completeTrip(id, updates);
+    }
+
+    return this.startTrip(tripData);
+  },
+
+  /**
+   * Get trips for a specific user with optional filtering and sorting
+   */
+  async getTrips(userId, timeFilter = 'all', sort = 'newest', search = '') {
+    if (!userId) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
+      userId = user.id;
+    }
+
+    let query = supabase
+      .from('trip_history')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('status', 'completed'); // Only show fully completed trips in history
+
 
     // Time filtering
     if (timeFilter !== 'all') {
@@ -67,15 +156,15 @@ export const tripService = {
 
     const { data, error } = await query;
     if (error) {
-      console.error('Error fetching trips:', error);
+      console.error('[tripService] Error fetching trips:', error);
       return [];
     }
 
-    // Manual client-side search across multiple text fields (Supabase text search is more complex to set up without full-text indexes)
-    let filteredData = data;
+    // Filter client side search across origin and destination text
+    let filteredData = data || [];
     if (search && search.trim() !== '') {
       const q = search.toLowerCase();
-      filteredData = data.filter(t => 
+      filteredData = filteredData.filter(t => 
         (t.origin_name && t.origin_name.toLowerCase().includes(q)) || 
         (t.destination_name && t.destination_name.toLowerCase().includes(q))
       );
@@ -85,24 +174,32 @@ export const tripService = {
   },
 
   /**
-   * Get aggregated statistics using SQL queries (client-side aggregation of full set for simplicity if not using RPC)
-   * Note: In a production app with millions of rows, use a Supabase RPC. Here we fetch the relevant rows.
+   * Get aggregated trip statistics for a user
    */
-  async getTripStats() {
-    const { data, error } = await supabase.from('trip_history').select('*');
+  async getTripStats(userId) {
+    if (!userId) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      userId = user.id;
+    }
+
+    const { data, error } = await supabase
+      .from('trip_history')
+      .select('*')
+      .eq('user_id', userId);
+
     if (error) {
-      console.error('Error fetching stats:', error);
+      console.error('[tripService] Error fetching trip stats:', error);
       return null;
     }
 
     if (!data || data.length === 0) return null;
 
     const totalTrips = data.length;
-    const totalDistance = data.reduce((sum, t) => sum + (t.distance_km || 0), 0);
-    const totalDuration = data.reduce((sum, t) => sum + (t.duration_minutes || 0), 0);
-    const avgSafetyScore = Math.round(data.reduce((sum, t) => sum + (t.safety_score || 0), 0) / totalTrips);
+    const totalDistance = data.reduce((sum, t) => sum + (parseFloat(t.distance_km) || 0), 0);
+    const totalDuration = data.reduce((sum, t) => sum + (parseInt(t.duration_minutes) || 0), 0);
+    const avgSafetyScore = Math.round(data.reduce((sum, t) => sum + (parseInt(t.safety_score) || 0), 0) / totalTrips);
 
-    // Calculate day/night (simplistic: if started_at hour > 18 or < 6)
     let nightTrips = 0;
     let dayTrips = 0;
     data.forEach(t => {
@@ -113,7 +210,6 @@ export const tripService = {
        }
     });
 
-    // Most frequent destination
     const destCounts = {};
     let topDest = 'None';
     let maxCount = 0;
@@ -129,7 +225,7 @@ export const tripService = {
     return {
       totalTrips,
       totalDistance: totalDistance.toFixed(1),
-      totalDuration, // in minutes
+      totalDuration,
       avgSafetyScore,
       nightTrips,
       dayTrips,
@@ -142,7 +238,7 @@ export const tripService = {
    */
   async deleteTrip(id) {
     const { error } = await supabase.from('trip_history').delete().eq('id', id);
-    if (error) console.error('Error deleting trip:', error);
+    if (error) console.error('[tripService] Error deleting trip:', error);
     return !error;
   },
 
@@ -151,21 +247,21 @@ export const tripService = {
    */
   async deleteAllTrips(userId) {
     const { error } = await supabase.from('trip_history').delete().eq('user_id', userId);
-    if (error) console.error('Error deleting all trips:', error);
+    if (error) console.error('[tripService] Error deleting all trips:', error);
     return !error;
   },
 
   /**
-   * Subscribe to Realtime Inserts
+   * Subscribe to Realtime Inserts and Updates
    */
-  subscribeToTrips(userId, onInsert) {
+  subscribeToTrips(userId, onUpdate) {
     const channel = supabase
-      .channel('public:trip_history')
+      .channel(`public:trip_history:${userId}`)
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'trip_history', filter: `user_id=eq.${userId}` },
+        { event: '*', schema: 'public', table: 'trip_history', filter: `user_id=eq.${userId}` },
         (payload) => {
-          onInsert(payload.new);
+          onUpdate(payload);
         }
       )
       .subscribe();

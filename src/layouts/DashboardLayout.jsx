@@ -4,7 +4,7 @@ import {
   LogOut, Home, Navigation, Bot, Map, ShieldAlert, 
   History, MapPin, Users, Bell, User, Settings, 
   Search, Sun, Moon, Phone, Menu, ChevronLeft,
-  Activity, AlertTriangle, ShieldCheck
+  Activity, AlertTriangle, ShieldCheck, X
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { notificationService } from '../services/notificationService';
@@ -19,6 +19,7 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [hasUnreadNotifs, setHasUnreadNotifs] = useState(false);
   
@@ -90,19 +91,19 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
 
-  // Handle window resize for auto-collapse
+  // Handle window resize for mobile breakpoint state
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth < 1024) {
-        setIsCollapsed(true);
-      } else {
-        setIsCollapsed(false);
-      }
+      const mobile = window.innerWidth < 1024;
+      setIsMobile(mobile);
     };
     window.addEventListener('resize', handleResize);
     handleResize(); // Init
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Compute effective collapsed state: Desktop only can be collapsed
+  const isSidebarCollapsed = !isMobile && isCollapsed;
 
   const handleSignOut = async () => {
     await signOut();
@@ -177,11 +178,11 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
       {/* Sidebar */}
       <motion.aside 
         initial={false}
-        animate={{ width: isCollapsed && window.innerWidth >= 1024 ? 80 : 256 }}
+        animate={{ width: isSidebarCollapsed ? 80 : (isMobile ? 300 : 256) }}
         className={`fixed lg:relative inset-y-0 left-0 z-50 lg:z-20 shrink-0 flex flex-col transition-transform duration-300 ease-in-out
           ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'}
           ${isDarkMode ? 'glass-panel bg-[#080c10]/95 lg:bg-[rgba(8,12,18,0.6)]' : 'glass-panel-light bg-white/95 lg:bg-[rgba(255,255,255,0.85)]'} 
-          lg:m-4 m-0 h-[100dvh] lg:h-auto w-64 lg:w-auto
+          lg:m-4 m-0 h-[100dvh] lg:h-auto w-[300px] max-w-[85vw] lg:w-auto
         `}
       >
         {/* Collapse Toggle (Desktop Only) */}
@@ -192,14 +193,21 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
           {isCollapsed ? <Menu className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
         </button>
 
-        {/* Branding Logo */}
-        <div className={`pt-6 pb-2 flex items-center justify-center ${isCollapsed ? 'px-2' : 'px-6'}`}>
-          <Logo size={isCollapsed ? 'sm' : 'lg'} />
+        {/* Branding Logo & Mobile Close Button */}
+        <div className={`pt-6 pb-2 flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'justify-between px-6'}`}>
+          <Logo size={isSidebarCollapsed ? 'sm' : 'lg'} />
+          <button 
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="lg:hidden p-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+            aria-label="Close menu"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* User Profile / Organization Summary */}
-        <div className={`p-5 flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'} h-24`}>
-          <div className="relative">
+        <div className={`p-5 flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-4'} h-24 shrink-0 border-b border-white/5`}>
+          <div className="relative shrink-0">
             <div className={`w-10 h-10 rounded-xl bg-gradient-to-tr ${role === 'enterprise' ? 'from-brand-orange to-yellow-500' : 'from-brand-blue to-brand-neonGreen'} p-[2px] shrink-0`}>
               <div className={`w-full h-full rounded-[10px] flex items-center justify-center overflow-hidden ${isDarkMode ? 'bg-brand-dark' : 'bg-white'}`}>
                 {profile?.avatar_url || user?.user_metadata?.avatar_url ? (
@@ -214,12 +222,12 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
           </div>
           
           <AnimatePresence>
-            {!isCollapsed && (
+            {!isSidebarCollapsed && (
               <motion.div 
                 initial={{ opacity: 0, width: 0 }} 
                 animate={{ opacity: 1, width: 'auto' }} 
                 exit={{ opacity: 0, width: 0 }}
-                className="min-w-0 overflow-hidden flex flex-col"
+                className="min-w-0 overflow-hidden flex flex-col flex-1"
               >
                 {role === 'enterprise' || role === 'government' ? (
                   <>
@@ -255,13 +263,13 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
               <React.Fragment key={link.path}>
                 {isAdminSection && (
                   <div className={`my-4 border-t ${isDarkMode ? 'border-white/10' : 'border-gray-200'} pt-4`}>
-                    {!isCollapsed && <p className="px-3 text-[10px] uppercase font-mono tracking-wider text-gray-500 mb-2">Administration</p>}
+                    {!isSidebarCollapsed && <p className="px-3 text-[10px] uppercase font-mono tracking-wider text-gray-500 mb-2">Administration</p>}
                   </div>
                 )}
                 <Link
                   to={link.path}
-                  title={isCollapsed ? link.label : ""}
-                  className={`flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2.5 rounded-[12px] transition-all duration-200 group relative
+                  title={isSidebarCollapsed ? link.label : ""}
+                  className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2.5 rounded-[12px] transition-all duration-200 group relative
                     ${isActive 
                       ? (isDarkMode ? 'bg-brand-blue/5 text-white shadow-[0_0_20px_rgba(59,130,246,0.1)] border border-white/5' : 'bg-blue-50/50 text-brand-blue font-medium border border-transparent')
                       : (isDarkMode ? 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 border border-transparent')
@@ -273,7 +281,7 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
                   )}
                   <Icon className={`w-[18px] h-[18px] ${isActive ? (role === 'enterprise' ? 'text-brand-orange drop-shadow-[0_0_8px_rgba(249,115,22,0.5)]' : (role === 'government' ? 'text-blue-400 drop-shadow-[0_0_8px_rgba(96,165,250,0.5)]' : 'text-brand-blue drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]')) : (role === 'enterprise' ? 'group-hover:text-brand-orange' : (role === 'government' ? 'group-hover:text-blue-400' : 'group-hover:text-brand-blue'))} transition-colors shrink-0`} />
                   <AnimatePresence>
-                    {!isCollapsed && (
+                    {!isSidebarCollapsed && (
                       <motion.span 
                         initial={{ opacity: 0, width: 0 }} 
                         animate={{ opacity: 1, width: 'auto' }} 
@@ -291,35 +299,35 @@ export default function DashboardLayout({ children, title, showRightSidebar = fa
         </nav>
 
         {/* Bottom Section */}
-        <div className="p-4 space-y-1 shrink-0">
+        <div className="p-4 space-y-1 shrink-0 border-t border-white/5">
           <button 
             onClick={() => setIsDarkMode(!isDarkMode)}
-            title={isCollapsed ? (isDarkMode ? 'Light Mode' : 'Dark Mode') : ""}
-            className={`flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-3 rounded-xl transition-colors w-full text-[13px] font-medium
+            title={isSidebarCollapsed ? (isDarkMode ? 'Light Mode' : 'Dark Mode') : ""}
+            className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-3 rounded-xl transition-colors w-full text-[13px] font-medium
               ${isDarkMode ? 'text-gray-400 hover:text-white hover:bg-white/5' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'}`}
           >
             {isDarkMode ? <Sun className="w-[18px] h-[18px] shrink-0" /> : <Moon className="w-[18px] h-[18px] shrink-0" />}
-            {!isCollapsed && <span className="whitespace-nowrap">Theme</span>}
+            {!isSidebarCollapsed && <span className="whitespace-nowrap">Theme</span>}
           </button>
           
           <Link 
             to={role === 'enterprise' ? '/enterprise/settings' : '/dashboard/settings'}
-            title={isCollapsed ? 'Settings' : ""}
-            className={`flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-3 rounded-xl transition-colors w-full text-[13px] font-medium
+            title={isSidebarCollapsed ? 'Settings' : ""}
+            className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-3 rounded-xl transition-colors w-full text-[13px] font-medium
               ${isDarkMode ? 'text-gray-400 hover:text-white hover:bg-white/5' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'}`}
           >
             <Settings className="w-[18px] h-[18px] shrink-0" />
-            {!isCollapsed && <span className="whitespace-nowrap">Settings</span>}
+            {!isSidebarCollapsed && <span className="whitespace-nowrap">Settings</span>}
           </Link>
 
           <button 
             onClick={handleSignOut}
-            title={isCollapsed ? 'Logout' : ""}
-            className={`flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-3 rounded-xl transition-colors w-full text-[13px] font-medium
+            title={isSidebarCollapsed ? 'Logout' : ""}
+            className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-3 rounded-xl transition-colors w-full text-[13px] font-medium
               ${isDarkMode ? 'hover:bg-red-500/10 hover:text-red-400 text-gray-400' : 'hover:bg-red-50 text-red-600'}`}
           >
             <LogOut className="w-[18px] h-[18px] shrink-0" />
-            {!isCollapsed && <span className="whitespace-nowrap">Logout</span>}
+            {!isSidebarCollapsed && <span className="whitespace-nowrap">Logout</span>}
           </button>
         </div>
       </motion.aside>

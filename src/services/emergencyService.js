@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { liveTrackingService } from './liveTrackingService';
 import { notificationService } from './notificationService';
+import { PUBLIC_APP_URL } from '../config/app';
 
 export const emergencyService = {
   // -------------------------
@@ -145,7 +146,7 @@ export const emergencyService = {
   async simulateEmergencyNotifications(userId, eventId, token, locationData) {
     // In production, this would also trigger SMS/WhatsApp via Edge Functions.
     // Here we insert a critical system notification to alert authorities/contacts.
-    const message = `Emergency alert recorded! User needs immediate assistance at (${locationData.lat}, ${locationData.lng}). \nLive Tracking Link: https://rakshanav.app/live/${token}`;
+    const message = `Emergency alert recorded! User needs immediate assistance at (${locationData.lat}, ${locationData.lng}). \nLive Tracking Link: ${PUBLIC_APP_URL}/live/${token}`;
     
     await notificationService.createNotification({
       title: '🚨 CRITICAL SOS ALERT',

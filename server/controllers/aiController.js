@@ -108,6 +108,17 @@ exports.expandHazardDescription = async (req, res, next) => {
   }
 };
 
+exports.generateTripInsights = async (req, res, next) => {
+  try {
+    const { tripStats } = req.body;
+    console.log('[AI Controller] Generating trip insights...');
+    const insights = await geminiService.generateTripInsights(tripStats || req.body);
+    res.json({ success: true, insights });
+  } catch (error) {
+    next(error);
+  }
+};
+
 exports.testConnection = async (req, res, next) => {
   try {
     console.log('[AI Controller] Testing Gemini connectivity...');
@@ -118,13 +129,12 @@ exports.testConnection = async (req, res, next) => {
   }
 };
 
-exports.generateTripInsights = async (req, res, next) => {
+exports.healthCheck = async (req, res) => {
   try {
-    const { tripStats } = req.body;
-    console.log(`[AI Controller] Generating trip insights...`);
-    const insights = await geminiService.generateTripInsights(tripStats);
-    res.json({ success: true, insights });
+    console.log('[AI Controller] Performing Gemini health check...');
+    const health = await geminiService.checkHealth();
+    res.json({ success: true, ...health });
   } catch (error) {
-    next(error);
+    res.status(500).json({ success: false, connected: false, message: error.message });
   }
 };

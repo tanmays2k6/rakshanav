@@ -1,21 +1,47 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const templates = require('../promptTemplates');
 
-// 1. Explicit Validation
-const apiKey = process.env.GEMINI_API_KEY;
-if (!apiKey) {
-  throw new Error('CRITICAL: GEMINI_API_KEY is not defined in environment variables. The AI server cannot start.');
-}
+const getGenAI = () => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+  return new GoogleGenerativeAI(apiKey);
+};
 
-// 2. Initialize Gemini API
-const genAI = new GoogleGenerativeAI(apiKey);
-// Using a robust model identifier. If flash fails, fallback to pro in older SDKs is not automatic, 
-// but gemini-1.5-flash-latest usually resolves the 404.
-const MODEL_NAME = 'gemini-2.5-flash';
-const FALLBACK_MODEL = 'gemini-1.5-flash';
+const MODEL_NAME = 'gemini-3.6-flash';
+const FALLBACK_MODEL = 'gemini-3.5-flash-lite';
 const routeAnalysisCache = new Map();
 
-console.log('✅ [Gemini] API Key Loaded Successfully');
+/**
+ * Health check for Gemini API & key configuration
+ */
+async function checkHealth() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length < 10) {
+    return { connected: false, message: 'GEMINI_API_KEY environment variable is missing or empty' };
+  }
+  const genAI = getGenAI();
+  if (!genAI) {
+    return { connected: false, message: 'Failed to initialize GoogleGenerativeAI client' };
+  }
+  try {
+    let model = genAI.getGenerativeModel({ model: MODEL_NAME });
+    try {
+      await model.generateContent('ping');
+      return { connected: true, model: MODEL_NAME };
+    } catch (err) {
+      if (err.status === 404 || err.message?.includes('404')) {
+        model = genAI.getGenerativeModel({ model: FALLBACK_MODEL });
+        await model.generateContent('ping');
+        return { connected: true, model: FALLBACK_MODEL };
+      }
+      console.warn('[Gemini Health Check] API ping failed:', err.message);
+      return { connected: false, message: err.message || 'Gemini API connection error' };
+    }
+  } catch (error) {
+    console.warn('[Gemini Health Check] Outer error:', error.message);
+    return { connected: false, message: error.message || 'Gemini API error' };
+  }
+}
 
 /**
  * Handle conversational chat (with history)
@@ -23,9 +49,17 @@ console.log('✅ [Gemini] API Key Loaded Successfully');
  */
 
 async function generateChatResponse(history, newMessage, context, res) {
+  const genAI = getGenAI();
+  if (!genAI) {
+    if (!res.headersSent) {
+      res.status(503).json({ error: 'GEMINI_API_KEY environment variable is missing on server.' });
+    }
+    return;
+  }
+
   try {
     // Inject dynamic context into the system prompt
-    let dynamicSystemPrompt = templates.SAFETY_ASSISTANT_SYSTEM + `
+    let dynamicSystemPrompt = (templates.SAFETY_ASSISTANT_SYSTEM || '') + `
     
 CRITICAL INSTRUCTIONS FOR RAKSHANAV COPILOT:
 You are not a generic chatbot. You are the RakshaNav Safety Copilot, an orchestrator of the RakshaNav application.
@@ -55,10 +89,18 @@ Recent Hazards: ${context.hazards ? JSON.stringify(context.hazards) : 'None'}
 Safety Score: 82/100 (Safe)
 `;
 
-    const model = genAI.getGenerativeModel({ 
-      model: MODEL_NAME,
-      systemInstruction: dynamicSystemPrompt
-    });
+    let model;
+    try {
+      model = genAI.getGenerativeModel({ 
+        model: MODEL_NAME,
+        systemInstruction: dynamicSystemPrompt
+      });
+    } catch(e) {
+      model = genAI.getGenerativeModel({ 
+        model: FALLBACK_MODEL,
+        systemInstruction: dynamicSystemPrompt
+      });
+    }
 
     let formattedHistory = history.map(msg => ({
       role: msg.role === 'ai' ? 'model' : 'user',
@@ -73,7 +115,22 @@ Safety Score: 82/100 (Safe)
       history: formattedHistory
     });
 
-    const result = await chat.sendMessageStream(newMessage);
+    let result;
+    try {
+      result = await chat.sendMessageStream(newMessage);
+    } catch (sendErr) {
+      if (sendErr.status === 404 || sendErr.message?.includes('404')) {
+        console.warn(`[Gemini] ${MODEL_NAME} failed with 404. Trying fallback ${FALLBACK_MODEL}...`);
+        const fallbackModel = genAI.getGenerativeModel({ 
+          model: FALLBACK_MODEL,
+          systemInstruction: dynamicSystemPrompt
+        });
+        const fallbackChat = fallbackModel.startChat({ history: formattedHistory });
+        result = await fallbackChat.sendMessageStream(newMessage);
+      } else {
+        throw sendErr;
+      }
+    }
     
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -91,7 +148,7 @@ Safety Score: 82/100 (Safe)
   } catch (error) {
     console.error('[Gemini Service] Error in chat generation:', error);
     if (!res.headersSent) {
-      throw error;
+      res.status(500).json({ error: error.message || 'Gemini API Error' });
     } else {
       res.write(`data: ${JSON.stringify({ error: error.message || 'Stream interrupted' })}\n\n`);
       res.end();
@@ -103,6 +160,8 @@ Safety Score: 82/100 (Safe)
  * Generate a route analysis explanation
  */
 async function analyzeRoute(routeData) {
+  const genAI = getGenAI();
+  if (!genAI) throw new Error('GEMINI_API_KEY environment variable is missing on server.');
   const model = genAI.getGenerativeModel({ model: MODEL_NAME });
   
   const prompt = `${templates.ROUTE_ANALYSIS}
@@ -154,6 +213,12 @@ ${JSON.stringify(routeData, null, 2)}`;
   let errorMsg = null;
   const startTime = Date.now();
 
+  const genAI = getGenAI();
+  if (!genAI) {
+    responseText = generateDeterministicFallback(routeData);
+    return { analysis: responseText, isFallback: true, error: 'GEMINI_API_KEY missing' };
+  }
+
   try {
     let model = genAI.getGenerativeModel({ model: MODEL_NAME });
     try {
@@ -161,7 +226,7 @@ ${JSON.stringify(routeData, null, 2)}`;
       const result = await model.generateContent(prompt);
       responseText = result.response.text();
     } catch (primaryError) {
-      if (primaryError.status === 404) {
+      if (primaryError.status === 404 || primaryError.message?.includes('404')) {
         console.warn(`[Gemini SDK] ${MODEL_NAME} threw 404, falling back to ${FALLBACK_MODEL}...`);
         model = genAI.getGenerativeModel({ model: FALLBACK_MODEL });
         const fallbackResult = await model.generateContent(prompt);
@@ -202,6 +267,8 @@ ${JSON.stringify(routeData, null, 2)}`;
  * Generate a summary of incidents
  */
 async function summarizeIncidents(incidentsData) {
+  const genAI = getGenAI();
+  if (!genAI) throw new Error('GEMINI_API_KEY environment variable is missing on server.');
   const model = genAI.getGenerativeModel({ model: MODEL_NAME });
   
   const prompt = `${templates.INCIDENT_SUMMARY}
@@ -217,6 +284,8 @@ async function summarizeIncidents(incidentsData) {
  * Generate recommendation insights
  */
 async function generateRecommendation(contextData, type = 'enterprise') {
+  const genAI = getGenAI();
+  if (!genAI) throw new Error('GEMINI_API_KEY environment variable is missing on server.');
   const model = genAI.getGenerativeModel({ model: MODEL_NAME });
   
   const systemPrompt = type === 'enterprise' ? templates.ENTERPRISE_INSIGHTS : templates.BASE_CONTEXT;
@@ -233,6 +302,8 @@ async function generateRecommendation(contextData, type = 'enterprise') {
  * Mock vision classification (text-based fallback for now)
  */
 async function classifyHazardTextFallback(description) {
+  const genAI = getGenAI();
+  if (!genAI) throw new Error('GEMINI_API_KEY environment variable is missing on server.');
   const model = genAI.getGenerativeModel({ 
     model: MODEL_NAME,
     generationConfig: { responseMimeType: "application/json" }
@@ -250,6 +321,8 @@ async function classifyHazardTextFallback(description) {
  * Real Vision classification for uploaded hazard photos
  */
 async function analyzeHazardImage(imageBase64, mimeType) {
+  const genAI = getGenAI();
+  if (!genAI) return { category: 'Other', priority: 'medium', confidenceScore: 0 };
   const model = genAI.getGenerativeModel({ 
     model: MODEL_NAME,
     generationConfig: { responseMimeType: "application/json" }
@@ -287,6 +360,8 @@ Return ONLY valid JSON in this exact format:
  * Expand short hazard descriptions into formal civic reports
  */
 async function expandHazardDescription(shortDesc) {
+  const genAI = getGenAI();
+  if (!genAI) return shortDesc;
   const model = genAI.getGenerativeModel({ model: MODEL_NAME });
   
   const prompt = `You are a professional civic safety report writer.
@@ -308,6 +383,8 @@ Short description: "${shortDesc}"`;
  * Generate insights based on a user's trip history
  */
 async function generateTripInsights(tripStats) {
+  const genAI = getGenAI();
+  if (!genAI) return ["Not enough data to generate personalized insights."];
   const model = genAI.getGenerativeModel({ 
     model: MODEL_NAME,
     generationConfig: { responseMimeType: "application/json" }
@@ -336,12 +413,15 @@ Return ONLY valid JSON in this format:
  * Independent verification test
  */
 async function testConnection() {
+  const genAI = getGenAI();
+  if (!genAI) throw new Error('GEMINI_API_KEY environment variable is missing on server.');
   const model = genAI.getGenerativeModel({ model: MODEL_NAME });
   const result = await model.generateContent("Hello, are you online?");
   return result.response.text();
 }
 
 module.exports = {
+  checkHealth,
   generateChatResponse,
   analyzeRoute,
   analyzeSingleRoute,

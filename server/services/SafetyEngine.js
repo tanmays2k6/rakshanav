@@ -90,25 +90,48 @@ const SafetyEngine = {
   },
 
   _calculateEmergencyScore(infra) {
-    if (!infra || infra.police === null) return null;
-    const police = infra.police || 0;
-    const hospitals = infra.hospitals || 0;
-    const pharmacies = infra.pharmacies || 0;
+    if (!infra || infra.status === 'unavailable' || infra.police === null) return null;
+    
+    let policeScore = 0;
+    if (Array.isArray(infra.police)) {
+      infra.police.forEach(p => {
+        if (p.distanceKm <= 0.5) policeScore += 25;
+        else if (p.distanceKm <= 1.0) policeScore += 15;
+        else policeScore += 5;
+      });
+    } else {
+      policeScore = (infra.police || 0) * 10;
+    }
+
+    let hospitalScore = 0;
+    if (Array.isArray(infra.hospitals)) {
+      infra.hospitals.forEach(h => {
+        if (h.distanceKm <= 0.5) hospitalScore += 40;
+        else if (h.distanceKm <= 1.0) hospitalScore += 20;
+        else hospitalScore += 10;
+      });
+    } else {
+      hospitalScore = (infra.hospitals || 0) * 20;
+    }
+
+    const pharmacies = Array.isArray(infra.pharmacies) ? infra.pharmacies.length : (infra.pharmacies || 0);
     const cctv = infra.cctv || 0;
-    let score = (police * 25) + (hospitals * 40) + (pharmacies * 10) + (cctv * 5);
+    let score = policeScore + hospitalScore + (pharmacies * 10) + (cctv * 5);
     return Math.min(100, score);
   },
 
   _calculateLightingScore(infra, isNightTime) {
     if (!isNightTime) return 100;
-    if (!infra || infra.commercial === null) return null;
+    if (!infra || infra.status === 'unavailable' || infra.commercial === null) return null;
     const commercial = infra.commercial || 0;
-    let score = commercial * 10;
+    const streetlights = infra.streetlights || 0;
+    let score = (commercial * 8) + (streetlights * 15);
     return Math.max(10, Math.min(100, score)); 
   },
 
   _calculateCommunityScore(reports, distanceKm) {
-    if (!reports || reports.length === 0) return 100; 
+    if (reports === null || reports === undefined) return null; 
+    if (reports.length === 0) return 100; 
     
     let penalty = 0;
     const now = new Date().getTime();
@@ -165,7 +188,7 @@ const SafetyEngine = {
   },
 
   _calculateWeatherScore(weather) {
-    if (!weather) return 100;
+    if (!weather) return null;
     let score = 100;
     if (weather.isRaining) score -= 30; 
     if (weather.isFoggy) score -= 50;   
@@ -191,15 +214,17 @@ const SafetyEngine = {
   },
 
   _generateExplanation(breakdown) {
+    // Helper: safely round a breakdown value that may be null (data unavailable)
+    const fmt = (v) => v !== null && v !== undefined ? `${Math.round(v)}/100` : 'N/A (data unavailable)';
     return {
-      emergency: `Scored ${Math.round(breakdown.emergency)}/100 based on proximity to police and hospitals.`,
-      lighting: `Scored ${Math.round(breakdown.lighting)}/100 based on time of day and commercial activity.`,
-      community: `Scored ${Math.round(breakdown.community)}/100 accounting for nearby hazard reports.`,
-      roadClass: `Scored ${Math.round(breakdown.roadClass)}/100 derived from OpenStreetMap highway classifications.`,
-      transit: `Scored ${Math.round(breakdown.transit)}/100 reflecting public transit and pedestrian infrastructure.`,
-      weather: `Scored ${Math.round(breakdown.weather)}/100 based on live meteorological data.`,
-      isolation: `Scored ${Math.round(breakdown.isolation)}/100 analyzing risk in deserted areas at night.`,
-      historical: `Scored ${Math.round(breakdown.historical)}/100 reflecting long-term incident trends.`
+      emergency: `Scored ${fmt(breakdown.emergency)} based on proximity to police and hospitals.`,
+      lighting: `Scored ${fmt(breakdown.lighting)} based on time of day and commercial activity.`,
+      community: `Scored ${fmt(breakdown.community)} accounting for nearby hazard reports.`,
+      roadClass: `Scored ${fmt(breakdown.roadClass)} derived from OpenStreetMap highway classifications.`,
+      transit: `Scored ${fmt(breakdown.transit)} reflecting public transit and pedestrian infrastructure.`,
+      weather: `Scored ${fmt(breakdown.weather)} based on live meteorological data.`,
+      isolation: `Scored ${fmt(breakdown.isolation)} analyzing risk in deserted areas at night.`,
+      historical: `Scored ${fmt(breakdown.historical)} reflecting long-term incident trends.`
     };
   }
 };

@@ -69,8 +69,9 @@ export default function CommunityReports() {
     }
     
     // Subscribe to realtime updates
-    const unsub = hazardService.subscribeToReports((payload) => {
-       fetchInitialData(); // Re-fetch on any change to keep it simple for now
+    // hazardService.subscribeToReports now passes (eventType, newRow, oldRow)
+    const unsub = hazardService.subscribeToReports((eventType, newRow) => {
+       fetchInitialData(); // Re-fetch on any change to keep the feed in sync
     });
 
     return () => unsub();
@@ -267,14 +268,22 @@ export default function CommunityReports() {
               {userLocation && (
                  <Circle center={[userLocation.lat, userLocation.lng]} radius={200} pathOptions={{ color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.2 }} />
               )}
-              {filteredReports.map(r => (
-                <Marker key={r.id} position={[r.latitude, r.longitude]} icon={defaultMarker}>
-                  <Popup className="custom-popup">
-                     <div className="font-bold text-gray-800">{r.title}</div>
-                     <div className="text-xs text-gray-500 mt-1">{r.status}</div>
-                  </Popup>
-                </Marker>
-              ))}
+              {filteredReports.map(r => {
+                // public_incident_view returns lat/lng aliases.
+                // incident_reports table returns latitude/longitude.
+                // Support both to handle data from either source.
+                const lat = r.lat ?? r.latitude;
+                const lng = r.lng ?? r.longitude;
+                if (!lat || !lng) return null;
+                return (
+                  <Marker key={r.id} position={[lat, lng]} icon={defaultMarker}>
+                    <Popup className="custom-popup">
+                       <div className="font-bold text-gray-800">{r.title}</div>
+                       <div className="text-xs text-gray-500 mt-1">{r.status}</div>
+                    </Popup>
+                  </Marker>
+                );
+              })}
             </MapContainer>
             <div className="absolute top-4 left-4 z-[1000] bg-black/80 backdrop-blur border border-white/10 px-3 py-1.5 rounded-full flex items-center gap-2">
                <div className="w-2 h-2 rounded-full bg-brand-blue animate-pulse"></div>

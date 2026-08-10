@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { PUBLIC_APP_URL } from '../config/app';
 
 // Generate a secure 16-character alphanumeric string for share links
 const generateShareToken = () => {
@@ -13,8 +14,7 @@ const generateShareToken = () => {
 };
 
 export const getShareUrl = (token) => {
-  const appUrl = import.meta.env.VITE_APP_URL || 'https://rakshanav.vercel.app';
-  return `${appUrl.replace(/\/$/, '')}/live/${token}`;
+  return `${PUBLIC_APP_URL}/live/${token}`;
 };
 
 class LiveTrackingService {
@@ -41,6 +41,7 @@ class LiveTrackingService {
   }
 
   async checkActiveSession(userId) {
+    if (!userId) return null;
     const { data, error } = await supabase
       .from('live_sessions')
       .select('*')
@@ -63,10 +64,17 @@ class LiveTrackingService {
 
   // 1. Start a Live Tracking Session (or resume existing)
   async startSession(userId, durationHours = 1) {
-    if (this.isTracking) return { success: false, error: 'Tracking already active' };
+    if (this.isTracking && this.currentSessionId && this.shareToken) {
+      return { 
+        success: true, 
+        token: this.shareToken, 
+        sessionId: this.currentSessionId,
+        resumed: true
+      };
+    }
     
     try {
-      // Check for an existing active session
+      // Check for an existing active non-expired session
       const existingSession = await this.checkActiveSession(userId);
       if (existingSession) {
         this.currentSessionId = existingSession.id;
@@ -84,7 +92,10 @@ class LiveTrackingService {
       
       // Create new session if no active one exists
       this.shareToken = generateShareToken();
-      const expiresAt = new Date(Date.now() + durationHours * 60 * 60 * 1000).toISOString();
+      const numHours = parseFloat(durationHours) || 1;
+      const durationMs = Math.round(numHours * 60 * 60 * 1000);
+      const expiresAt = new Date(Date.now() + durationMs).toISOString();
+      const durationLabel = numHours < 1 ? `${Math.round(numHours * 60)}m` : `${numHours}h`;
 
       const { data, error } = await supabase
         .from('live_sessions')
@@ -94,7 +105,7 @@ class LiveTrackingService {
               share_token: this.shareToken,
               is_active: true,
               expires_at: expiresAt,
-              share_duration: `${durationHours}h`,
+              share_duration: durationLabel,
               last_updated: new Date().toISOString(),
               last_location: null
             }
@@ -103,7 +114,7 @@ class LiveTrackingService {
         .single();
 
       if (error) {
-        if (process.env.NODE_ENV === 'development') console.error('Failed to create live session:', error);
+        console.error('Failed to create live session:', error);
         return { success: false, error: error.message, fullError: error };
       }
 

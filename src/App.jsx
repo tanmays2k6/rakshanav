@@ -62,7 +62,7 @@ export default function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/access-denied" element={<AccessDenied />} />
-          <Route path="/live/:token" element={<PublicTracking />} />
+          <Route path="/live/:trackingToken" element={<PublicTracking />} />
 
           {/* Onboarding Flow (needs auth) */}
           <Route 

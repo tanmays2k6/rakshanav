@@ -1,5 +1,6 @@
 const routeFeatureService = require('../services/routeFeatureService');
 const SafetyEngine = require('../services/SafetyEngine');
+const { enqueueOverpassTask } = require('../utils/overpassQueue');
 
 const routeCache = new Map();
 
@@ -30,8 +31,20 @@ exports.getRoute = async (req, res, next) => {
     console.log(`Origin: ${startLat}, ${startLng}`);
     console.log(`Destination: ${endLat}, ${endLng}`);
     
-    const isStartValid = isWithinBengaluru(startLat, startLng);
-    const isEndValid = isWithinBengaluru(endLat, endLng);
+    // Coords arrive as strings from query params — parse to float before boundary validation.
+    const sLat = parseFloat(startLat);
+    const sLng = parseFloat(startLng);
+    const eLat = parseFloat(endLat);
+    const eLng = parseFloat(endLng);
+
+    if (isNaN(sLat) || isNaN(sLng) || isNaN(eLat) || isNaN(eLng)) {
+      const err = new Error('Invalid coordinates provided.');
+      err.status = 400;
+      throw err;
+    }
+
+    const isStartValid = isWithinBengaluru(sLat, sLng);
+    const isEndValid = isWithinBengaluru(eLat, eLng);
     
     console.log(`Boundary Validation -> Origin: ${isStartValid}, Destination: ${isEndValid}`);
     console.log(`==================================================\n`);
@@ -47,7 +60,7 @@ exports.getRoute = async (req, res, next) => {
       throw err;
     }
 
-    const cacheKey = `${startLat},${startLng}_${endLat},${endLng}_${profile}`;
+    const cacheKey = `${sLat},${sLng}_${eLat},${eLng}_${profile}`;
     if (routeCache.has(cacheKey)) {
       console.log(`[Route Controller] Returning cached route for ${cacheKey}`);
       return res.json(routeCache.get(cacheKey));
@@ -55,7 +68,7 @@ exports.getRoute = async (req, res, next) => {
 
     console.log(`[Route Controller] Fetching OSRM routes...`);
     
-    const url = `https://router.project-osrm.org/route/v1/${profile}/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson&alternatives=3&steps=true`;
+    const url = `https://router.project-osrm.org/route/v1/${profile}/${sLng},${sLat};${eLng},${eLat}?overview=full&geometries=geojson&alternatives=3&steps=true`;
     console.log(`[DEBUG] OSRM URL: ${url}`);
     
     const osrmStart = Date.now();
@@ -121,8 +134,8 @@ exports.getRouteMetrics = async (req, res, next) => {
     const lats = coords.map(c => c[1]);
     const lngs = coords.map(c => c[0]);
     
-    const distanceKm = distanceRaw || 0;
-    const durationMins = durationRaw || 0;
+    const distanceKm = typeof distanceRaw === 'number' && distanceRaw > 100 ? (distanceRaw / 1000) : (parseFloat(distanceRaw) || 1);
+    const durationMins = typeof durationRaw === 'number' && durationRaw > 500 ? Math.ceil(durationRaw / 60) : (parseInt(durationRaw) || 15);
 
     const hour = new Date().getHours();
     const isNightTime = hour < 6 || hour > 18;
@@ -175,7 +188,8 @@ exports.getRouteMetrics = async (req, res, next) => {
            supabaseSuccess = true;
            const allReports = await sRes.json();
            const geoUtils = require('../utils/geoUtils');
-           reportsArray = allReports.filter(r => geoUtils.isPointNearPolyline(coords, r.lat, r.lng, 300));
+           // incident_reports uses 'latitude' and 'longitude' columns (not lat/lng aliases)
+           reportsArray = allReports.filter(r => geoUtils.isPointNearPolyline(coords, r.latitude, r.longitude, 300));
          }
       }
     } catch (e) {
@@ -293,7 +307,7 @@ exports.getPointSafety = async (req, res, next) => {
     let commercialCount = 0;
 
     try {
-      const response = await fetch('https://overpass-api.de/api/interpreter', {
+      const response = await enqueueOverpassTask(() => fetch('https://overpass-api.de/api/interpreter', {
         method: 'POST',
         body: query,
         headers: {
@@ -301,7 +315,7 @@ exports.getPointSafety = async (req, res, next) => {
           'Accept': 'application/json',
           'User-Agent': 'RakshaNavApp/1.0'
         }
-      });
+      }));
       if (response.ok) {
         const data = await response.json();
         const counts = data.elements[0]?.tags || {};

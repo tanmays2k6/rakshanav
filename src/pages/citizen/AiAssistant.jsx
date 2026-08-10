@@ -6,11 +6,34 @@ import { appRoutes } from '../../config/routes';
 import { useGeminiChat } from '../../hooks/useGemini';
 
 export default function AiAssistant() {
-  const { messages, isTyping, sendMessage, stopGeneration } = useGeminiChat();
+  const { messages, isTyping, lastError, sendMessage, stopGeneration } = useGeminiChat();
   const [input, setInput] = useState('');
+  const [healthStatus, setHealthStatus] = useState('checking'); // 'checking' | 'connected' | 'unavailable'
   const endOfMessagesRef = useRef(null);
   const navigatedMsgIds = useRef(new Set());
   const navigate = useNavigate();
+
+  // Gemini API Health Check
+  useEffect(() => {
+    let active = true;
+    const checkHealth = async () => {
+      try {
+        const res = await fetch('/api/ai/health');
+        if (res.ok) {
+          const data = await res.json();
+          if (active) {
+            setHealthStatus(data.connected ? 'connected' : 'unavailable');
+          }
+        } else {
+          if (active) setHealthStatus('unavailable');
+        }
+      } catch (err) {
+        if (active) setHealthStatus('unavailable');
+      }
+    };
+    checkHealth();
+    return () => { active = false; };
+  }, []);
 
   // Watch for auto-navigation action tags in the AI's final response
   useEffect(() => {
@@ -77,6 +100,13 @@ export default function AiAssistant() {
     setInput('');
   };
 
+  const handleRetry = () => {
+    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+    if (lastUserMsg && lastUserMsg.text) {
+      sendMessage(lastUserMsg.text);
+    }
+  };
+
   const handleCopy = (text) => {
     navigator.clipboard.writeText(text);
   };
@@ -95,9 +125,25 @@ export default function AiAssistant() {
         </div>
         <div>
           <h2 className="font-display font-bold text-white tracking-wide">Gemini Safety Assistant</h2>
-          <p className="text-xs text-brand-neonGreen font-mono flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-brand-neonGreen animate-pulse"></span>
-            Online & monitoring
+          <p className="text-xs font-mono flex items-center gap-1.5">
+            {healthStatus === 'connected' && (
+              <>
+                <span className="w-2 h-2 rounded-full bg-brand-neonGreen animate-pulse"></span>
+                <span className="text-brand-neonGreen font-semibold">Gemini Connected</span>
+              </>
+            )}
+            {healthStatus === 'checking' && (
+              <>
+                <span className="w-2 h-2 rounded-full bg-yellow-400 animate-ping"></span>
+                <span className="text-yellow-400 font-semibold">Connecting...</span>
+              </>
+            )}
+            {healthStatus === 'unavailable' && (
+              <>
+                <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                <span className="text-red-400 font-semibold">Gemini Unavailable</span>
+              </>
+            )}
           </p>
         </div>
       </div>
@@ -121,6 +167,17 @@ export default function AiAssistant() {
               {msg.role === 'ai' ? (
                 <div className="prose prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-white/5 prose-pre:border prose-pre:border-white/10">
                   <ReactMarkdown>{cleanTextForMarkdown(msg.text)}</ReactMarkdown>
+                  
+                  {msg.text.includes('Gemini Safety Assistant is temporarily unavailable') && !isTyping && (
+                    <div className="mt-3 flex items-center gap-3">
+                      <button 
+                        onClick={handleRetry}
+                        className="px-3 py-1.5 bg-brand-blue/20 hover:bg-brand-blue/30 border border-brand-blue/40 text-brand-blue rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" /> Retry
+                      </button>
+                    </div>
+                  )}
                   
                   {msg.text.includes('<action type="navigate" target="/dashboard/emergency"') && !isTyping && (
                     <div className="mt-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center gap-3 cursor-pointer hover:bg-red-500/20 transition-colors" onClick={() => navigate('/dashboard/emergency', { state: { autoTrigger: true } })}>

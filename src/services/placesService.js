@@ -18,54 +18,39 @@ export const placesService = {
   /**
    * Get nearby safe havens using progressive searching and relevance sorting
    */
-  getNearbyHavens: async (lat, lng) => {
-    const radii = [1000, 3000, 5000, 10000];
-    let allPlaces = [];
-
-    for (const radius of radii) {
-      try {
-        const response = await fetch(`${API_URL}/nearby?lat=${lat}&lng=${lng}&radius=${radius}`);
-        const data = await response.json();
-        
-        if (!response.ok) {
-          throw new Error(data.error || 'Places service unavailable.');
-        }
-        
-        if (data.places && data.places.length > 0) {
-          allPlaces = data.places;
-          break; // Found places, stop expanding radius
-        }
-      } catch (error) {
-        if (error.message === 'Failed to fetch') {
-          throw new Error('Places API unreachable.');
-        }
-        console.error(`[placesService] getNearbyHavens (radius ${radius}) Error:`, error);
-        throw error;
+  getNearbyHavens: async (lat, lng, radius = 3000) => {
+    try {
+      const response = await fetch(`${API_URL}/nearby?lat=${lat}&lng=${lng}&radius=${radius}`);
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Places service unavailable.');
       }
+      
+      const allPlaces = data.places || [];
+      if (allPlaces.length === 0) return [];
+
+      const priorityPenalty = {
+        'police': 0.0,
+        'hospital': 0.2,
+        'fire_station': 0.3,
+        'clinic': 0.8,
+        'pharmacy': 1.5,
+        'atm': 3.0
+      };
+
+      allPlaces.forEach(p => {
+        p.distanceKm = placesService.calculateDistance(lat, lng, p.lat, p.lng);
+        const penalty = priorityPenalty[p.type] !== undefined ? priorityPenalty[p.type] : 5.0;
+        p.score = p.distanceKm + penalty;
+      });
+
+      allPlaces.sort((a, b) => a.score - b.score);
+
+      return allPlaces;
+    } catch (error) {
+      console.error(`[placesService] getNearbyHavens Error:`, error);
+      return [];
     }
-
-    if (allPlaces.length === 0) return [];
-
-    // Prioritize emergency relevance: lower penalty is better.
-    // Penalty is effectively added as equivalent km to distance.
-    const priorityPenalty = {
-      'police': 0.0,
-      'hospital': 0.2,
-      'fire_station': 0.3,
-      'clinic': 0.8,
-      'pharmacy': 1.5,
-      'atm': 3.0
-    };
-
-    allPlaces.forEach(p => {
-      p.distanceKm = placesService.calculateDistance(lat, lng, p.lat, p.lng);
-      const penalty = priorityPenalty[p.type] !== undefined ? priorityPenalty[p.type] : 5.0;
-      p.score = p.distanceKm + penalty;
-    });
-
-    // Sort by relevance score (lowest score = highest relevance/closest)
-    allPlaces.sort((a, b) => a.score - b.score);
-
-    return allPlaces;
   }
 };

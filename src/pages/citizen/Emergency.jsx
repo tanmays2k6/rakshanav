@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { emergencyService } from '../../services/emergencyService';
+import { placesService } from '../../services/placesService';
 import { 
   PhoneCall, MapPin, Share2, AlertOctagon, HeartPulse, FileText, 
   Plus, Edit, Trash2, X, Check, Clock, User, Info, AlertTriangle, 
@@ -131,24 +132,13 @@ export default function Emergency() {
 
   const fetchNearbyFacilities = async (lat, lng) => {
     try {
-      const query = `
-        [out:json];
-        (
-          node["amenity"="hospital"](around:3000,${lat},${lng});
-          node["amenity"="police"](around:3000,${lat},${lng});
-          node["amenity"="pharmacy"](around:3000,${lat},${lng});
-          node["amenity"="fire_station"](around:3000,${lat},${lng});
-        );
-        out;
-      `;
-      const response = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
-      const data = await response.json();
-      const facilities = data.elements.map(e => ({
+      const havens = await placesService.getNearbyHavens(lat, lng, 3000);
+      const facilities = (havens || []).map(e => ({
         id: e.id,
         lat: e.lat,
-        lng: e.lon,
-        type: e.tags.amenity,
-        name: e.tags.name || (e.tags.amenity === 'police' ? 'Police Station' : e.tags.amenity === 'hospital' ? 'Hospital' : e.tags.amenity === 'pharmacy' ? 'Pharmacy' : 'Fire Station')
+        lng: e.lng,
+        type: e.category || e.type,
+        name: e.name || (e.category === 'police' ? 'Police Station' : e.category === 'hospital' ? 'Hospital' : e.category === 'pharmacy' ? 'Pharmacy' : 'Fire Station')
       }));
       setNearbyFacilities(facilities);
     } catch (err) {

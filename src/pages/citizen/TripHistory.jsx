@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { tripService } from '../../services/tripService';
 import { geminiService } from '../../services/geminiService';
@@ -25,35 +26,50 @@ export default function TripHistory() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedTripId, setExpandedTripId] = useState(null);
 
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const navigate = useNavigate();
+
   useEffect(() => {
     if (!user) return;
     loadData();
-
-    const unsub = tripService.subscribeToTrips(user.id, (newTrip) => {
-       loadData(); // Re-fetch on insert to update stats and list
-    });
-
-    return () => unsub();
   }, [user, timeFilter, sortOrder, searchQuery]);
 
+  // Realtime subscription is SEPARATE from filter state to prevent subscription storm.
+  // Only depends on user — a new subscription is NOT needed when filters change.
+  useEffect(() => {
+    if (!user) return;
+    const unsub = tripService.subscribeToTrips(user.id, () => {
+       loadData(); // Re-fetch on insert/update to refresh list and stats
+    });
+    return () => unsub();
+  }, [user]);
+
   const loadData = async () => {
+    if (!user) return;
     setIsLoading(true);
+    setErrorMsg('');
     
-    // Fetch trips
-    const fetchedTrips = await tripService.getTrips(timeFilter, sortOrder, searchQuery);
-    setTrips(fetchedTrips);
+    try {
+      // Fetch trips for authenticated user
+      const fetchedTrips = await tripService.getTrips(user.id, timeFilter, sortOrder, searchQuery);
+      setTrips(fetchedTrips || []);
 
-    // Fetch Stats
-    const fetchedStats = await tripService.getTripStats();
-    setStats(fetchedStats);
+      // Fetch Stats for authenticated user
+      const fetchedStats = await tripService.getTripStats(user.id);
+      setStats(fetchedStats);
 
-    // Fetch AI Insights if we have stats and no search active (to avoid spamming API)
-    if (fetchedStats && fetchedStats.totalTrips > 0 && !searchQuery) {
-      const fetchedInsights = await geminiService.generateTripInsights(fetchedStats);
-      setInsights(fetchedInsights);
+      // Fetch AI Insights if stats exist and no search active
+      if (fetchedStats && fetchedStats.totalTrips > 0 && !searchQuery) {
+        const fetchedInsights = await geminiService.generateTripInsights(fetchedStats);
+        setInsights(fetchedInsights || []);
+      }
+    } catch (err) {
+      console.error('[TripHistory] Error loading data:', err);
+      setErrorMsg('Unable to load trip history. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
-
-    setIsLoading(false);
   };
 
   const handleExportCSV = () => {
@@ -177,8 +193,16 @@ export default function TripHistory() {
       <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 relative">
         
         {isLoading ? (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-8 h-8 border-4 border-brand-blue/30 border-t-brand-blue rounded-full animate-spin"></div>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <div className="w-8 h-8 border-4 border-brand-blue/30 border-t-brand-blue rounded-full animate-spin mb-3"></div>
+            <p className="text-xs text-gray-400 font-mono">Loading trip history...</p>
+          </div>
+        ) : errorMsg ? (
+          <div className="p-6 bg-red-500/10 border border-red-500/20 rounded-xl text-center">
+             <p className="text-sm text-red-400 font-semibold mb-3">{errorMsg}</p>
+             <button onClick={loadData} className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 text-xs font-bold rounded-lg transition-colors">
+               Retry Loading
+             </button>
           </div>
         ) : trips.length === 0 ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6">
@@ -189,7 +213,7 @@ export default function TripHistory() {
              <p className="text-gray-400 text-sm max-w-sm mb-6">
                 You haven't completed any tracked journeys yet. Start navigating to build your safety profile.
              </p>
-             <button onClick={() => window.location.href = '/dashboard/navigation'} className="bg-brand-blue hover:bg-blue-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold transition-colors shadow-lg shadow-brand-blue/20">
+             <button onClick={() => navigate('/dashboard/navigation')} className="bg-brand-blue hover:bg-blue-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold transition-colors shadow-lg shadow-brand-blue/20">
                 Start Safe Navigation
              </button>
           </div>

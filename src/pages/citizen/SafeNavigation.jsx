@@ -12,7 +12,7 @@ export default function SafeNavigation() {
   const autoTrigger = typeof state.autoTrigger === 'boolean' ? state.autoTrigger : false;
 
   return (
-    <div className="absolute inset-0 rounded-2xl overflow-hidden border border-white/10 shadow-xl z-0">
+    <div className="absolute inset-0 rounded-2xl overflow-hidden border border-white/10 shadow-xl z-0 pb-16 lg:pb-0">
       <UserView 
         onAddReport={() => {}} 
         userReports={[]} 
