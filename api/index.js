@@ -1,10 +1,3 @@
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
+const app = require('../server/index');
 
-// Require server/package.json so Vercel includes it in the build, 
-// which forces Node to treat the server folder as CommonJS.
-require('../server/package.json'); 
-
-const app = require('../server/index.js');
-
-export default app;
+module.exports = app;
