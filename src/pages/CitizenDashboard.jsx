@@ -77,8 +77,8 @@ export default function CitizenDashboard() {
       const fetchPromises = [
         locationService.reverseGeocode(position.lat, position.lng),
         weatherService.getWeather(position.lat, position.lng),
-        supabase.from('reports').select('*').eq('user_id', user?.id).gte('created_at', new Date(new Date().setHours(0,0,0,0)).toISOString()),
-        supabase.from('trips').select('*').eq('user_id', user?.id).gte('started_at', new Date(new Date().setHours(0,0,0,0)).toISOString())
+        supabase.from('incident_reports').select('*').eq('user_id', user?.id).gte('created_at', new Date(new Date().setHours(0,0,0,0)).toISOString()),
+        supabase.from('trip_history').select('*').eq('user_id', user?.id).gte('started_at', new Date(new Date().setHours(0,0,0,0)).toISOString())
       ];
       
       let havensPromise = Promise.resolve({ status: 'skipped' });

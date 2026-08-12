@@ -31,7 +31,7 @@ export const enterpriseService = {
     const userIds = members.map(m => m.user_id);
     
     const { data, error } = await supabase
-      .from('trips')
+      .from('trip_history')
       .select(`
         *,
         profiles (full_name, avatar_url, role)
@@ -89,7 +89,7 @@ export const enterpriseService = {
     const userIds = members.map(m => m.user_id);
 
     const { data, error } = await supabase
-      .from('trips')
+      .from('trip_history')
       .select('safety_score')
       .in('user_id', userIds)
       .eq('status', 'completed')
