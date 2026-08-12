@@ -346,9 +346,9 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
         
         let metrics;
         try {
-          // Hard timeout for infrastructure request (15s)
+          // Hard timeout for infrastructure request (35s)
           const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("infrastructure_timeout")), 15000)
+            setTimeout(() => reject(new Error("infrastructure_timeout")), 35000)
           );
           
           metrics = await Promise.race([
