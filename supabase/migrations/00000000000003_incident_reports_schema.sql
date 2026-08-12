@@ -6,7 +6,7 @@ DROP TABLE IF EXISTS public.incident_updates CASCADE;
 DROP TABLE IF EXISTS public.incident_reports CASCADE;
 
 -- 2. Create Incident Reports Table
-CREATE TABLE public.incident_reports (
+CREATE TABLE IF NOT EXISTS public.incident_reports (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   category TEXT NOT NULL,
@@ -31,7 +31,7 @@ CREATE TABLE public.incident_reports (
 );
 
 -- 3. Create Incident Updates (Timeline)
-CREATE TABLE public.incident_updates (
+CREATE TABLE IF NOT EXISTS public.incident_updates (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_id UUID REFERENCES public.incident_reports(id) ON DELETE CASCADE,
   status TEXT NOT NULL,
@@ -41,7 +41,7 @@ CREATE TABLE public.incident_updates (
 );
 
 -- 4. Create Incident Comments
-CREATE TABLE public.incident_comments (
+CREATE TABLE IF NOT EXISTS public.incident_comments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_id UUID REFERENCES public.incident_reports(id) ON DELETE CASCADE,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -51,7 +51,7 @@ CREATE TABLE public.incident_comments (
 );
 
 -- 5. Create Incident Votes
-CREATE TABLE public.incident_votes (
+CREATE TABLE IF NOT EXISTS public.incident_votes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_id UUID REFERENCES public.incident_reports(id) ON DELETE CASCADE,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -158,18 +158,40 @@ ALTER TABLE public.incident_comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.incident_votes ENABLE ROW LEVEL SECURITY;
 
 -- Anyone can read reports
+DROP POLICY IF EXISTS "Public can read incident reports" ON public.incident_reports;
 CREATE POLICY "Public can read incident reports" ON public.incident_reports FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Public can read incident updates" ON public.incident_updates;
 CREATE POLICY "Public can read incident updates" ON public.incident_updates FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Public can read incident comments" ON public.incident_comments;
 CREATE POLICY "Public can read incident comments" ON public.incident_comments FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Public can read incident votes" ON public.incident_votes;
 CREATE POLICY "Public can read incident votes" ON public.incident_votes FOR SELECT USING (true);
 
 -- Authenticated users can create
+DROP POLICY IF EXISTS "Users can create incident reports" ON public.incident_reports;
 CREATE POLICY "Users can create incident reports" ON public.incident_reports FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Users can create incident comments" ON public.incident_comments;
 CREATE POLICY "Users can create incident comments" ON public.incident_comments FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Users can vote" ON public.incident_votes;
 CREATE POLICY "Users can vote" ON public.incident_votes FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Users can update their votes" ON public.incident_votes;
 CREATE POLICY "Users can update their votes" ON public.incident_votes FOR UPDATE USING (auth.uid() = user_id);
 
 -- Enable Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE public.incident_reports;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.incident_comments;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.incident_votes;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.incident_reports;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.incident_comments;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.incident_votes;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+

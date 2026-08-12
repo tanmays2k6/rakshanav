@@ -9,12 +9,15 @@ ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
 
 -- Create the missing INSERT policy
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
 CREATE POLICY "Users can insert own profile" 
   ON public.profiles FOR INSERT 
   WITH CHECK (auth.uid() = id);
 
 -- Note: SELECT and UPDATE policies should already exist per schema.sql
 -- However, we recreate the UPDATE policy to ensure it has both USING and WITH CHECK
+
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 
@@ -27,3 +30,5 @@ CREATE POLICY "Users can update own profile"
 -- Without this, Postgres denies access before RLS is even checked.
 GRANT SELECT, INSERT, UPDATE ON public.profiles TO authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.profiles TO anon;
+
+

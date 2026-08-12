@@ -26,25 +26,33 @@ ALTER TABLE public.ai_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ai_messages ENABLE ROW LEVEL SECURITY;
 
 -- 4. RLS Policies for AI Sessions
+DROP POLICY IF EXISTS "Users can view their own AI sessions" ON public.ai_sessions;
 CREATE POLICY "Users can view their own AI sessions" 
     ON public.ai_sessions FOR SELECT 
     USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert their own AI sessions" ON public.ai_sessions;
+
 CREATE POLICY "Users can insert their own AI sessions" 
     ON public.ai_sessions FOR INSERT 
     WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can delete their own AI sessions" ON public.ai_sessions;
 
 CREATE POLICY "Users can delete their own AI sessions" 
     ON public.ai_sessions FOR DELETE 
     USING (auth.uid() = user_id);
 
 -- 5. RLS Policies for AI Messages
+DROP POLICY IF EXISTS "Users can view messages of their sessions" ON public.ai_messages;
 CREATE POLICY "Users can view messages of their sessions" 
     ON public.ai_messages FOR SELECT 
     USING (EXISTS (
         SELECT 1 FROM public.ai_sessions s 
         WHERE s.id = session_id AND s.user_id = auth.uid()
     ));
+
+DROP POLICY IF EXISTS "Users can insert messages to their sessions" ON public.ai_messages;
 
 CREATE POLICY "Users can insert messages to their sessions" 
     ON public.ai_messages FOR INSERT 
@@ -56,3 +64,5 @@ CREATE POLICY "Users can insert messages to their sessions"
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_ai_sessions_user_id ON public.ai_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_ai_messages_session_id ON public.ai_messages(session_id);
+
+

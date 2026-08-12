@@ -68,12 +68,14 @@ ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
 -- 1. Organizations Policies
 -- Users can view their own organization if they are a member
+DROP POLICY IF EXISTS "Members can view their organizations" ON public.organizations;
 CREATE POLICY "Members can view their organizations" ON public.organizations
     FOR SELECT USING (
         id IN (SELECT org_id FROM public.organization_members WHERE user_id = auth.uid())
     );
 
 -- Only owners/admins can update organizations
+DROP POLICY IF EXISTS "Admins can update organizations" ON public.organizations;
 CREATE POLICY "Admins can update organizations" ON public.organizations
     FOR UPDATE USING (
         id IN (SELECT org_id FROM public.organization_members WHERE user_id = auth.uid() AND role IN ('owner', 'admin'))
@@ -82,21 +84,27 @@ CREATE POLICY "Admins can update organizations" ON public.organizations
 
 -- 2. Organization Members Policies
 -- Users can view members of the same organization
+DROP POLICY IF EXISTS "Members can view colleagues" ON public.organization_members;
 CREATE POLICY "Members can view colleagues" ON public.organization_members
     FOR SELECT USING (
         org_id IN (SELECT org_id FROM public.organization_members WHERE user_id = auth.uid())
     );
 
 -- Admins can manage members
+DROP POLICY IF EXISTS "Admins can insert members" ON public.organization_members;
 CREATE POLICY "Admins can insert members" ON public.organization_members
     FOR INSERT WITH CHECK (
         org_id IN (SELECT org_id FROM public.organization_members WHERE user_id = auth.uid() AND role IN ('owner', 'admin', 'manager'))
     );
 
+DROP POLICY IF EXISTS "Admins can update members" ON public.organization_members;
+
 CREATE POLICY "Admins can update members" ON public.organization_members
     FOR UPDATE USING (
         org_id IN (SELECT org_id FROM public.organization_members WHERE user_id = auth.uid() AND role IN ('owner', 'admin', 'manager'))
     );
+
+DROP POLICY IF EXISTS "Admins can delete members" ON public.organization_members;
 
 CREATE POLICY "Admins can delete members" ON public.organization_members
     FOR DELETE USING (
@@ -106,18 +114,21 @@ CREATE POLICY "Admins can delete members" ON public.organization_members
 
 -- 3. Enterprise Alerts Policies
 -- All members can view alerts in their org
+DROP POLICY IF EXISTS "Members can view alerts" ON public.enterprise_alerts;
 CREATE POLICY "Members can view alerts" ON public.enterprise_alerts
     FOR SELECT USING (
         org_id IN (SELECT org_id FROM public.organization_members WHERE user_id = auth.uid())
     );
 
 -- System or authorized users can insert alerts
+DROP POLICY IF EXISTS "Authorized can insert alerts" ON public.enterprise_alerts;
 CREATE POLICY "Authorized can insert alerts" ON public.enterprise_alerts
     FOR INSERT WITH CHECK (
         org_id IN (SELECT org_id FROM public.organization_members WHERE user_id = auth.uid())
     );
 
 -- Admins/Managers can update (resolve) alerts
+DROP POLICY IF EXISTS "Managers can update alerts" ON public.enterprise_alerts;
 CREATE POLICY "Managers can update alerts" ON public.enterprise_alerts
     FOR UPDATE USING (
         org_id IN (SELECT org_id FROM public.organization_members WHERE user_id = auth.uid() AND role IN ('owner', 'admin', 'manager'))
@@ -126,12 +137,14 @@ CREATE POLICY "Managers can update alerts" ON public.enterprise_alerts
 
 -- 4. Audit Logs Policies
 -- Only owners and admins can view audit logs
+DROP POLICY IF EXISTS "Admins can view audit logs" ON public.audit_logs;
 CREATE POLICY "Admins can view audit logs" ON public.audit_logs
     FOR SELECT USING (
         org_id IN (SELECT org_id FROM public.organization_members WHERE user_id = auth.uid() AND role IN ('owner', 'admin'))
     );
 
 -- Anyone in the org can have an audit log generated for them (usually via RPC, but allowing insert if they are a member)
+DROP POLICY IF EXISTS "Members can insert audit logs" ON public.audit_logs;
 CREATE POLICY "Members can insert audit logs" ON public.audit_logs
     FOR INSERT WITH CHECK (
         org_id IN (SELECT org_id FROM public.organization_members WHERE user_id = auth.uid())
@@ -146,3 +159,5 @@ GRANT SELECT, INSERT, UPDATE ON public.organizations TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.organization_members TO authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.enterprise_alerts TO authenticated;
 GRANT SELECT, INSERT ON public.audit_logs TO authenticated;
+
+

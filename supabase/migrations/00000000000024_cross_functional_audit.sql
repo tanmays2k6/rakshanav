@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
 -- Only Admins can view audit logs
+DROP POLICY IF EXISTS "Admins can view audit logs" ON public.audit_logs;
 CREATE POLICY "Admins can view audit logs"
 ON public.audit_logs FOR SELECT
 TO authenticated
@@ -26,6 +27,7 @@ USING (
 );
 
 -- Admins and internal DB functions can insert
+DROP POLICY IF EXISTS "Admins can insert audit logs" ON public.audit_logs;
 CREATE POLICY "Admins can insert audit logs"
 ON public.audit_logs FOR INSERT
 TO authenticated
@@ -36,6 +38,7 @@ WITH CHECK (
 -- Note: We might allow other privileged roles to log audits if required later, 
 -- but normally audit logs are written by triggers or backend services using a service role. 
 -- For this client-driven app, we'll let authenticated users insert their own audit logs if they have the right role
+DROP POLICY IF EXISTS "Privileged roles can insert audit logs" ON public.audit_logs;
 CREATE POLICY "Privileged roles can insert audit logs"
 ON public.audit_logs FOR INSERT
 TO authenticated
@@ -48,4 +51,10 @@ WITH CHECK (
 ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS related_report_id UUID REFERENCES public.incident_reports(id) ON DELETE CASCADE;
 
 -- 4. Enable realtime on audit_logs
-ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_logs;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_logs;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+

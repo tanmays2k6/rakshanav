@@ -5,7 +5,8 @@ ALTER TABLE public.profiles ADD CONSTRAINT profiles_role_check CHECK (role IN ('
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS notification_preferences JSONB DEFAULT '{"route_alerts": true, "hazard_alerts": true, "weather_alerts": true, "gov_advisories": true, "enterprise_notifs": true, "community_notifs": true, "push_enabled": true, "email_enabled": false}';
 
 -- 2. Create Notifications Table
-CREATE TABLE public.notifications (
+DROP TABLE IF EXISTS public.notifications CASCADE;
+CREATE TABLE IF NOT EXISTS public.notifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT NOT NULL,
     message TEXT NOT NULL,
@@ -23,12 +24,12 @@ CREATE TABLE public.notifications (
     metadata JSONB DEFAULT '{}'
 );
 
-CREATE INDEX idx_notifications_recipient_type ON public.notifications(recipient_type);
-CREATE INDEX idx_notifications_city ON public.notifications(city);
-CREATE INDEX idx_notifications_created_at ON public.notifications(created_at);
+CREATE INDEX IF NOT EXISTS idx_notifications_recipient_type ON public.notifications(recipient_type);
+CREATE INDEX IF NOT EXISTS idx_notifications_city ON public.notifications(city);
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON public.notifications(created_at);
 
 -- 3. Create Notification Reads Table (for broadcasts)
-CREATE TABLE public.notification_reads (
+CREATE TABLE IF NOT EXISTS public.notification_reads (
     user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
     notification_id UUID REFERENCES public.notifications(id) ON DELETE CASCADE,
     read_at TIMESTAMPTZ DEFAULT NOW(),
@@ -41,6 +42,7 @@ ALTER TABLE public.notification_reads ENABLE ROW LEVEL SECURITY;
 
 -- 5. Notification Policies
 -- Read Policy: Citizens can see 'all', their specific 'user', their 'city' (if stored in profile but since it's not, we'll simplify to just 'all' and 'user' for now unless city is passed in context. Assuming city is handled loosely for now or we match 'all').
+DROP POLICY IF EXISTS "Users can read intended notifications" ON public.notifications;
 CREATE POLICY "Users can read intended notifications"
 ON public.notifications FOR SELECT
 TO authenticated
@@ -52,6 +54,7 @@ USING (
 );
 
 -- Insert Policy: Admin, Gov, Enterprise can create
+DROP POLICY IF EXISTS "Privileged roles can create notifications" ON public.notifications;
 CREATE POLICY "Privileged roles can create notifications"
 ON public.notifications FOR INSERT
 TO authenticated
@@ -60,6 +63,7 @@ WITH CHECK (
 );
 
 -- Update/Delete Policy: Admin or sender
+DROP POLICY IF EXISTS "Sender or admin can update" ON public.notifications;
 CREATE POLICY "Sender or admin can update"
 ON public.notifications FOR UPDATE
 TO authenticated
@@ -72,6 +76,8 @@ WITH CHECK (
     EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
 );
 
+DROP POLICY IF EXISTS "Sender or admin can delete" ON public.notifications;
+
 CREATE POLICY "Sender or admin can delete"
 ON public.notifications FOR DELETE
 TO authenticated
@@ -81,6 +87,7 @@ USING (
 );
 
 -- 6. Notification Reads Policies
+DROP POLICY IF EXISTS "Users can manage own reads" ON public.notification_reads;
 CREATE POLICY "Users can manage own reads"
 ON public.notification_reads FOR ALL
 TO authenticated
@@ -88,9 +95,19 @@ USING (user_id = auth.uid())
 WITH CHECK (user_id = auth.uid());
 
 -- 7. Realtime setup
-ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.notification_reads;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.notification_reads;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
 
 -- 8. Grants
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.notifications TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.notification_reads TO authenticated;
+
+

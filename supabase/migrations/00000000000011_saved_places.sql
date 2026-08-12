@@ -2,7 +2,7 @@
 DROP TABLE IF EXISTS public.saved_places CASCADE;
 
 -- 2. Create the table
-CREATE TABLE public.saved_places (
+CREATE TABLE IF NOT EXISTS public.saved_places (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   
@@ -42,17 +42,30 @@ EXECUTE FUNCTION update_saved_places_modtime();
 ALTER TABLE public.saved_places ENABLE ROW LEVEL SECURITY;
 
 -- 5. Create Policies
+DROP POLICY IF EXISTS "Users can view own saved places" ON public.saved_places;
 CREATE POLICY "Users can view own saved places" ON public.saved_places 
   FOR SELECT USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can insert own saved places" ON public.saved_places;
 
 CREATE POLICY "Users can insert own saved places" ON public.saved_places 
   FOR INSERT WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update own saved places" ON public.saved_places;
+
 CREATE POLICY "Users can update own saved places" ON public.saved_places 
   FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can delete own saved places" ON public.saved_places;
 
 CREATE POLICY "Users can delete own saved places" ON public.saved_places 
   FOR DELETE USING (auth.uid() = user_id);
 
 -- 6. Enable Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE public.saved_places;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.saved_places;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+

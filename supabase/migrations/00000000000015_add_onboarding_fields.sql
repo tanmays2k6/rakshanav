@@ -21,3 +21,5 @@ ADD COLUMN IF NOT EXISTS profile_completed BOOLEAN DEFAULT false;
 -- The role column already exists, but we update the check constraint to ensure it includes the expected values
 -- Actually, the role column already has CHECK (role IN ('citizen', 'enterprise', 'government', 'unassigned'))
 -- so no change is needed there.
+
+

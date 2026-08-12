@@ -5,6 +5,7 @@ ALTER TABLE public.incident_reports ADD COLUMN IF NOT EXISTS is_anonymous BOOLEA
 DROP POLICY IF EXISTS "Users can create incident reports" ON public.incident_reports;
 
 -- Create the strict policy requiring exact user_id match or explicit anonymous report
+DROP POLICY IF EXISTS "Authenticated users can insert incident reports" ON public.incident_reports;
 CREATE POLICY "Authenticated users can insert incident reports"
 ON public.incident_reports
 FOR INSERT
@@ -16,7 +17,10 @@ WITH CHECK (
 
 -- Allow anyone (including backend anon key) to read incident reports for safety routing
 DROP POLICY IF EXISTS "Anyone can view incident reports" ON public.incident_reports;
+DROP POLICY IF EXISTS "Anyone can view incident reports" ON public.incident_reports;
 CREATE POLICY "Anyone can view incident reports"
 ON public.incident_reports
 FOR SELECT
 USING (true);
+
+

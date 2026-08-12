@@ -19,6 +19,8 @@ CREATE INDEX IF NOT EXISTS police_jurisdictions_geom_idx
 
 ALTER TABLE public.police_jurisdictions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Anyone can view police jurisdictions" ON public.police_jurisdictions;
+
 CREATE POLICY "Anyone can view police jurisdictions" 
   ON public.police_jurisdictions FOR SELECT USING (true);
 
@@ -38,6 +40,8 @@ CREATE TABLE IF NOT EXISTS public.crime_statistics (
 );
 
 ALTER TABLE public.crime_statistics ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Anyone can view crime statistics" ON public.crime_statistics;
 
 CREATE POLICY "Anyone can view crime statistics" 
   ON public.crime_statistics FOR SELECT USING (true);
@@ -116,3 +120,5 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE TRIGGER update_police_jurisdictions_modtime
 BEFORE UPDATE ON public.police_jurisdictions
 FOR EACH ROW EXECUTE FUNCTION update_timestamp_column();
+
+

@@ -154,6 +154,7 @@ DROP POLICY IF EXISTS "Citizens can insert own incident reports"        ON publi
 
 -- Final canonical policy: authenticated user's UUID must match user_id.
 -- Anonymous reports keep user_id = auth.uid() and set is_anonymous = true.
+DROP POLICY IF EXISTS "Citizens can insert own incident reports" ON public.incident_reports;
 CREATE POLICY "Citizens can insert own incident reports"
 ON public.incident_reports
 FOR INSERT
@@ -166,6 +167,8 @@ WITH CHECK (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS "Anyone can view incident reports" ON public.incident_reports;
 DROP POLICY IF EXISTS "Public can read incident reports" ON public.incident_reports;
+
+DROP POLICY IF EXISTS "Anyone can view incident reports" ON public.incident_reports;
 
 CREATE POLICY "Anyone can view incident reports"
 ON public.incident_reports
@@ -180,14 +183,19 @@ USING (true);
 DROP POLICY IF EXISTS "Public can read incident updates"                ON public.incident_updates;
 DROP POLICY IF EXISTS "Authenticated users can insert incident updates" ON public.incident_updates;
 
+DROP POLICY IF EXISTS "Public can read incident updates" ON public.incident_updates;
+
 CREATE POLICY "Public can read incident updates"
 ON public.incident_updates
 FOR SELECT
 USING (true);
 
 -- Government officers and report owners can add timeline entries directly
+DROP POLICY IF EXISTS "Authenticated users can insert incident updates" ON public.incident_updates;
 CREATE POLICY "Authenticated users can insert incident updates"
 ON public.incident_updates
 FOR INSERT
 TO authenticated
 WITH CHECK (auth.uid() IS NOT NULL);
+
+

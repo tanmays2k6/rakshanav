@@ -147,7 +147,7 @@ export default function CitizenDashboard() {
 
       let metrics = null;
       try {
-        const envUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const envUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
         const res = await fetch(`${envUrl}/api/route/safety/point?lat=${position.lat}&lng=${position.lng}`);
         if (res.ok) {
           const data = await res.json();

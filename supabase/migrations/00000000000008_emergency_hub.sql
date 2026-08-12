@@ -5,7 +5,7 @@ DROP TABLE IF EXISTS public.user_medical_info CASCADE;
 DROP TABLE IF EXISTS public.medical_profile CASCADE;
 
 -- 2. Create emergency_contacts table
-CREATE TABLE public.emergency_contacts (
+CREATE TABLE IF NOT EXISTS public.emergency_contacts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
@@ -21,7 +21,7 @@ CREATE TABLE public.emergency_contacts (
 );
 
 -- 3. Create medical_profile table
-CREATE TABLE public.medical_profile (
+CREATE TABLE IF NOT EXISTS public.medical_profile (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
   blood_group TEXT,
@@ -37,7 +37,7 @@ CREATE TABLE public.medical_profile (
 );
 
 -- 4. Create sos_events table
-CREATE TABLE public.sos_events (
+CREATE TABLE IF NOT EXISTS public.sos_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   session_id UUID, -- Reference to live_sessions (we won't strictly FK it in case session gets deleted)
@@ -77,16 +77,35 @@ ALTER TABLE public.medical_profile ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sos_events ENABLE ROW LEVEL SECURITY;
 
 -- 7. Create Policies
+DROP POLICY IF EXISTS "Users can manage own emergency contacts" ON public.emergency_contacts;
 CREATE POLICY "Users can manage own emergency contacts" ON public.emergency_contacts 
   FOR ALL USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can manage own medical profile" ON public.medical_profile;
+
 CREATE POLICY "Users can manage own medical profile" ON public.medical_profile 
   FOR ALL USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can manage own sos events" ON public.sos_events;
 
 CREATE POLICY "Users can manage own sos events" ON public.sos_events 
   FOR ALL USING (auth.uid() = user_id);
 
 -- 8. Enable Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE public.emergency_contacts;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.medical_profile;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.sos_events;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.emergency_contacts;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.medical_profile;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.sos_events;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+

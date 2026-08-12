@@ -8,9 +8,12 @@ ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can delete own profile" ON public.profiles;
 
 -- Create the DELETE policy
+DROP POLICY IF EXISTS "Users can delete own profile" ON public.profiles;
 CREATE POLICY "Users can delete own profile" 
   ON public.profiles FOR DELETE 
   USING (auth.uid() = id);
 
 -- Grant base table privileges for DELETE to the authenticated role
 GRANT DELETE ON public.profiles TO authenticated;
+
+

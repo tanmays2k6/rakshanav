@@ -1,4 +1,5 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+// In production, if VITE_API_URL is not set, we use an empty string or log a warning rather than falling back to localhost
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001/api');
 
 export const weatherService = {
   /**

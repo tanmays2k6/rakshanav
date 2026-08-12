@@ -13,9 +13,13 @@ CREATE TABLE IF NOT EXISTS public.saved_places (
 );
 
 ALTER TABLE public.saved_places ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can view own saved places" ON public.saved_places;
 CREATE POLICY "Users can view own saved places" ON public.saved_places FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can insert own saved places" ON public.saved_places;
 CREATE POLICY "Users can insert own saved places" ON public.saved_places FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can update own saved places" ON public.saved_places;
 CREATE POLICY "Users can update own saved places" ON public.saved_places FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can delete own saved places" ON public.saved_places;
 CREATE POLICY "Users can delete own saved places" ON public.saved_places FOR DELETE USING (auth.uid() = user_id);
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.saved_places TO authenticated;
 
@@ -31,7 +35,9 @@ CREATE TABLE IF NOT EXISTS public.notifications (
 );
 
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can view own notifications" ON public.notifications;
 CREATE POLICY "Users can view own notifications" ON public.notifications FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can update own notifications" ON public.notifications;
 CREATE POLICY "Users can update own notifications" ON public.notifications FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 GRANT SELECT, UPDATE ON public.notifications TO authenticated;
 
@@ -54,9 +60,12 @@ CREATE TABLE IF NOT EXISTS public.community_reports (
 
 ALTER TABLE public.community_reports ENABLE ROW LEVEL SECURITY;
 -- Anyone can view community reports (they are public hazard markers)
+DROP POLICY IF EXISTS "Anyone can view community reports" ON public.community_reports;
 CREATE POLICY "Anyone can view community reports" ON public.community_reports FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Users can insert community reports" ON public.community_reports;
 CREATE POLICY "Users can insert community reports" ON public.community_reports FOR INSERT WITH CHECK (auth.uid() = user_id);
 -- Only the owner can update (unless it's a voting system, then we need a secure RPC, but for now we keep it simple)
+DROP POLICY IF EXISTS "Users can update own reports" ON public.community_reports;
 CREATE POLICY "Users can update own reports" ON public.community_reports FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 GRANT SELECT, INSERT, UPDATE ON public.community_reports TO authenticated;
 GRANT SELECT ON public.community_reports TO anon;
@@ -71,6 +80,7 @@ CREATE TABLE IF NOT EXISTS public.feedback (
 );
 
 ALTER TABLE public.feedback ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can insert feedback" ON public.feedback;
 CREATE POLICY "Users can insert feedback" ON public.feedback FOR INSERT WITH CHECK (auth.uid() = user_id);
 GRANT INSERT ON public.feedback TO authenticated;
 
@@ -95,7 +105,12 @@ CREATE TABLE IF NOT EXISTS public.trip_history (
 );
 
 ALTER TABLE public.trip_history ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can view own trips" ON public.trip_history;
 CREATE POLICY "Users can view own trips" ON public.trip_history FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can insert own trips" ON public.trip_history;
 CREATE POLICY "Users can insert own trips" ON public.trip_history FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can update own trips" ON public.trip_history;
 CREATE POLICY "Users can update own trips" ON public.trip_history FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 GRANT SELECT, INSERT, UPDATE ON public.trip_history TO authenticated;
+
+

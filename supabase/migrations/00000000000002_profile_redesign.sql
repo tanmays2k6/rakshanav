@@ -37,11 +37,13 @@ ON CONFLICT (id) DO NOTHING;
 
 -- 4. Setup Storage Policies for avatars
 -- Allow public access to read avatars
+DROP POLICY IF EXISTS "Avatar images are publicly accessible." ON storage.objects;
 CREATE POLICY "Avatar images are publicly accessible." 
 ON storage.objects FOR SELECT 
 USING ( bucket_id = 'avatars' );
 
 -- Allow authenticated users to upload avatars (but only to their own user id folder/file)
+DROP POLICY IF EXISTS "Users can upload their own avatars." ON storage.objects;
 CREATE POLICY "Users can upload their own avatars." 
 ON storage.objects FOR INSERT 
 WITH CHECK (
@@ -50,6 +52,7 @@ WITH CHECK (
 );
 
 -- Allow authenticated users to update their own avatars
+DROP POLICY IF EXISTS "Users can update their own avatars." ON storage.objects;
 CREATE POLICY "Users can update their own avatars."
 ON storage.objects FOR UPDATE
 USING (
@@ -58,6 +61,7 @@ USING (
 );
 
 -- Allow authenticated users to delete their own avatars
+DROP POLICY IF EXISTS "Users can delete their own avatars." ON storage.objects;
 CREATE POLICY "Users can delete their own avatars."
 ON storage.objects FOR DELETE
 USING (
@@ -66,4 +70,10 @@ USING (
 );
 
 -- 5. Enable Realtime on profiles
-ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+

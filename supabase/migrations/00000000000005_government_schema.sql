@@ -61,46 +61,55 @@ ALTER TABLE public.government_notifications ENABLE ROW LEVEL SECURITY;
 -- 6. RLS Policies
 
 -- government_organizations: Members can read their own org
+DROP POLICY IF EXISTS "Gov members can view their orgs" ON public.government_organizations;
 CREATE POLICY "Gov members can view their orgs" ON public.government_organizations
     FOR SELECT USING (
         id IN (SELECT org_id FROM public.government_members WHERE user_id = auth.uid())
     );
 
 -- government_members: Members can read other members in their org
+DROP POLICY IF EXISTS "Gov members can view colleagues" ON public.government_members;
 CREATE POLICY "Gov members can view colleagues" ON public.government_members
     FOR SELECT USING (
         org_id IN (SELECT org_id FROM public.government_members WHERE user_id = auth.uid())
     );
 
 -- Admins can update members
+DROP POLICY IF EXISTS "Gov Admins can update members" ON public.government_members;
 CREATE POLICY "Gov Admins can update members" ON public.government_members
     FOR UPDATE USING (
         org_id IN (SELECT org_id FROM public.government_members WHERE user_id = auth.uid() AND role IN ('owner', 'admin'))
     );
     
 -- Allow inserting members on signup
+DROP POLICY IF EXISTS "Users can sign up as gov members" ON public.government_members;
 CREATE POLICY "Users can sign up as gov members" ON public.government_members
     FOR INSERT WITH CHECK (
         user_id = auth.uid()
     );
 
 -- government_notifications: Public can read SENT notifications
+DROP POLICY IF EXISTS "Public can read sent gov notifications" ON public.government_notifications;
 CREATE POLICY "Public can read sent gov notifications" ON public.government_notifications
     FOR SELECT USING (
         status = 'sent'
     );
     
 -- Gov members can read all notifications from their org
+DROP POLICY IF EXISTS "Gov members can read org notifications" ON public.government_notifications;
 CREATE POLICY "Gov members can read org notifications" ON public.government_notifications
     FOR SELECT USING (
         org_id IN (SELECT org_id FROM public.government_members WHERE user_id = auth.uid())
     );
 
 -- Only authorized Gov members can insert/update notifications
+DROP POLICY IF EXISTS "Gov Admins/Officers can insert notifications" ON public.government_notifications;
 CREATE POLICY "Gov Admins/Officers can insert notifications" ON public.government_notifications
     FOR INSERT WITH CHECK (
         org_id IN (SELECT org_id FROM public.government_members WHERE user_id = auth.uid() AND role IN ('owner', 'admin', 'officer') AND status = 'approved')
     );
+
+DROP POLICY IF EXISTS "Gov Admins/Officers can update notifications" ON public.government_notifications;
 
 CREATE POLICY "Gov Admins/Officers can update notifications" ON public.government_notifications
     FOR UPDATE USING (
@@ -114,6 +123,7 @@ GRANT SELECT, INSERT, UPDATE ON public.government_notifications TO authenticated
 GRANT SELECT ON public.government_notifications TO anon;
 
 -- Update incident_reports policies to allow approved government members to UPDATE
+DROP POLICY IF EXISTS "Approved Gov members can update incident_reports" ON public.incident_reports;
 CREATE POLICY "Approved Gov members can update incident_reports" ON public.incident_reports
     FOR UPDATE USING (
         EXISTS (
@@ -123,3 +133,5 @@ CREATE POLICY "Approved Gov members can update incident_reports" ON public.incid
             AND role IN ('owner', 'admin', 'officer')
         )
     );
+
+

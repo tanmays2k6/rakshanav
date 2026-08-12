@@ -2,7 +2,7 @@
 DROP TABLE IF EXISTS public.trip_history CASCADE;
 
 -- 2. Create the redesigned table
-CREATE TABLE public.trip_history (
+CREATE TABLE IF NOT EXISTS public.trip_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   
@@ -37,17 +37,30 @@ CREATE TABLE public.trip_history (
 ALTER TABLE public.trip_history ENABLE ROW LEVEL SECURITY;
 
 -- 4. Create Policies
+DROP POLICY IF EXISTS "Users can view own trips" ON public.trip_history;
 CREATE POLICY "Users can view own trips" ON public.trip_history 
   FOR SELECT USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can insert own trips" ON public.trip_history;
 
 CREATE POLICY "Users can insert own trips" ON public.trip_history 
   FOR INSERT WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update own trips" ON public.trip_history;
+
 CREATE POLICY "Users can update own trips" ON public.trip_history 
   FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can delete own trips" ON public.trip_history;
 
 CREATE POLICY "Users can delete own trips" ON public.trip_history 
   FOR DELETE USING (auth.uid() = user_id);
 
 -- 5. Enable Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE public.trip_history;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.trip_history;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+

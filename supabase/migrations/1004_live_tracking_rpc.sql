@@ -39,3 +39,5 @@ GRANT EXECUTE ON FUNCTION public.get_live_session_by_token(TEXT) TO anon, authen
 
 -- 4. Reload PostgREST schema cache
 NOTIFY pgrst, 'reload schema';
+
+

@@ -14,8 +14,11 @@ CREATE TABLE IF NOT EXISTS public.live_sessions (
 ALTER TABLE public.live_sessions ENABLE ROW LEVEL SECURITY;
 
 -- Anyone can read a session if they have the token (or just allow select, since token is unguessed)
+DROP POLICY IF EXISTS "Anyone can view sessions" ON public.live_sessions;
 CREATE POLICY "Anyone can view sessions" ON public.live_sessions FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Users can insert own sessions" ON public.live_sessions;
 CREATE POLICY "Users can insert own sessions" ON public.live_sessions FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can update own sessions" ON public.live_sessions;
 CREATE POLICY "Users can update own sessions" ON public.live_sessions FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 GRANT SELECT ON public.live_sessions TO anon, authenticated;
@@ -38,8 +41,10 @@ CREATE TABLE IF NOT EXISTS public.live_locations (
 ALTER TABLE public.live_locations ENABLE ROW LEVEL SECURITY;
 
 -- Anyone can read locations (filtered by session_id in the client)
+DROP POLICY IF EXISTS "Anyone can view locations" ON public.live_locations;
 CREATE POLICY "Anyone can view locations" ON public.live_locations FOR SELECT USING (true);
 -- But only authenticated users can insert locations to their sessions (using subquery check)
+DROP POLICY IF EXISTS "Users can insert locations to own sessions" ON public.live_locations;
 CREATE POLICY "Users can insert locations to own sessions" ON public.live_locations FOR INSERT WITH CHECK (
     EXISTS (SELECT 1 FROM public.live_sessions WHERE id = session_id AND user_id = auth.uid())
 );
@@ -49,5 +54,15 @@ GRANT INSERT ON public.live_locations TO authenticated;
 
 -- 3. Enable Realtime
 -- Drop publication tables if they already exist, just to prevent duplicate errors, then add them
-ALTER PUBLICATION supabase_realtime ADD TABLE public.live_locations;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.live_sessions;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.live_locations;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.live_sessions;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+

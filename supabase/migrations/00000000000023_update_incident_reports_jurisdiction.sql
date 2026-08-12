@@ -28,3 +28,5 @@ CREATE TRIGGER trigger_assign_jurisdiction
 BEFORE INSERT ON public.incident_reports
 FOR EACH ROW
 EXECUTE FUNCTION public.auto_assign_jurisdiction();
+
+

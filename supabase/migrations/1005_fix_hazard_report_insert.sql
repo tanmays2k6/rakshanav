@@ -23,6 +23,8 @@ DROP POLICY IF EXISTS "Authenticated users can insert incident reports"      ON 
 --   • Anonymous reports still carry the real user_id (identity is hidden
 --     through is_anonymous=true on public views, not by nulling user_id).
 --   • This prevents any user from forging another user's identity.
+DROP POLICY IF EXISTS "Citizens can insert own incident reports" ON public.incident_reports;
+DROP POLICY IF EXISTS "Citizens can insert own incident reports" ON public.incident_reports;
 CREATE POLICY "Citizens can insert own incident reports"
 ON public.incident_reports
 FOR INSERT
@@ -43,6 +45,7 @@ DROP POLICY IF EXISTS "Public can read incident reports"     ON public.incident_
 
 -- Public / community can read all non-rejected reports.
 -- Private fields (user_id, is_anonymous) are hidden via public_incident_view.
+DROP POLICY IF EXISTS "Anyone can view incident reports" ON public.incident_reports;
 CREATE POLICY "Anyone can view incident reports"
 ON public.incident_reports
 FOR SELECT
@@ -51,6 +54,8 @@ USING (true);
 -- =============================================================================
 -- 4. INCIDENT REPORTS — Government UPDATE (idempotent re-create)
 -- =============================================================================
+
+DROP POLICY IF EXISTS "Approved Gov members can update incident_reports" ON public.incident_reports;
 
 DROP POLICY IF EXISTS "Approved Gov members can update incident_reports" ON public.incident_reports;
 
@@ -72,6 +77,8 @@ USING (
 
 DROP POLICY IF EXISTS "Users can update own incident reports" ON public.incident_reports;
 
+DROP POLICY IF EXISTS "Users can update own incident reports" ON public.incident_reports;
+
 CREATE POLICY "Users can update own incident reports"
 ON public.incident_reports
 FOR UPDATE
@@ -81,6 +88,8 @@ USING (auth.uid() = user_id);
 -- =============================================================================
 -- 6. INCIDENT REPORTS — Citizens can DELETE their own reports
 -- =============================================================================
+
+DROP POLICY IF EXISTS "Users can delete own incident reports" ON public.incident_reports;
 
 DROP POLICY IF EXISTS "Users can delete own incident reports" ON public.incident_reports;
 
@@ -110,6 +119,7 @@ DROP POLICY IF EXISTS "Hazard photos are publicly accessible"          ON storag
 DROP POLICY IF EXISTS "Users can upload hazard photos"                 ON storage.objects;
 
 -- Public READ: Anyone can view hazard photos (bucket is public)
+DROP POLICY IF EXISTS "Hazard images are publicly accessible" ON storage.objects;
 CREATE POLICY "Hazard images are publicly accessible"
 ON storage.objects
 FOR SELECT
@@ -117,6 +127,7 @@ USING (bucket_id = 'hazards');
 
 -- Authenticated UPLOAD: User must be logged in.
 -- Path is scoped: uploads go to hazards/{user_id}/{filename}
+DROP POLICY IF EXISTS "Authenticated users can upload hazard images" ON storage.objects;
 CREATE POLICY "Authenticated users can upload hazard images"
 ON storage.objects
 FOR INSERT
@@ -127,6 +138,8 @@ WITH CHECK (
 );
 
 -- Allow authenticated users to update their own uploaded files
+DROP POLICY IF EXISTS "Users can update own hazard images" ON storage.objects;
+DROP POLICY IF EXISTS "Users can update own hazard images" ON storage.objects;
 CREATE POLICY "Users can update own hazard images"
 ON storage.objects
 FOR UPDATE
@@ -168,3 +181,5 @@ WHERE status NOT IN ('Rejected');
 -- NOTE: user_id is deliberately excluded — never expose it to public queries.
 
 GRANT SELECT ON public.public_incident_view TO anon, authenticated;
+
+

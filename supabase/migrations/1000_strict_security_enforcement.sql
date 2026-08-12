@@ -39,10 +39,12 @@ DROP POLICY IF EXISTS "Anyone can view profiles" ON public.profiles;
 
 -- Ensure own viewing policy exists
 DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
 CREATE POLICY "Users can view own profile" ON public.profiles 
 FOR SELECT USING (auth.uid() = id);
 
 -- Allow Government and Admin to view all profiles for official duties
+DROP POLICY IF EXISTS "Gov and Admin can view all profiles" ON public.profiles;
 DROP POLICY IF EXISTS "Gov and Admin can view all profiles" ON public.profiles;
 CREATE POLICY "Gov and Admin can view all profiles" ON public.profiles 
 FOR SELECT USING (
@@ -59,10 +61,12 @@ DROP POLICY IF EXISTS "Public can read incident reports" ON public.incident_repo
 
 -- Users can view their own reports
 DROP POLICY IF EXISTS "Users can view own incident reports" ON public.incident_reports;
+DROP POLICY IF EXISTS "Users can view own incident reports" ON public.incident_reports;
 CREATE POLICY "Users can view own incident reports" ON public.incident_reports
 FOR SELECT USING (user_id = auth.uid());
 
 -- Gov and Admin can view all reports (to process them)
+DROP POLICY IF EXISTS "Gov and Admin can view all incident reports" ON public.incident_reports;
 DROP POLICY IF EXISTS "Gov and Admin can view all incident reports" ON public.incident_reports;
 CREATE POLICY "Gov and Admin can view all incident reports" ON public.incident_reports
 FOR SELECT USING (
@@ -114,10 +118,12 @@ DROP POLICY IF EXISTS "Anyone can view locations" ON public.live_locations;
 
 -- Own sessions only
 DROP POLICY IF EXISTS "Users can view own sessions" ON public.live_sessions;
+DROP POLICY IF EXISTS "Users can view own sessions" ON public.live_sessions;
 CREATE POLICY "Users can view own sessions" ON public.live_sessions 
 FOR SELECT USING (user_id = auth.uid());
 
 -- Own locations only
+DROP POLICY IF EXISTS "Users can view own locations" ON public.live_locations;
 DROP POLICY IF EXISTS "Users can view own locations" ON public.live_locations;
 CREATE POLICY "Users can view own locations" ON public.live_locations 
 FOR SELECT USING (
@@ -125,6 +131,7 @@ FOR SELECT USING (
 );
 
 -- Secure RPC for accessing live tracking via share_token
+DROP FUNCTION IF EXISTS public.get_live_session_by_token(TEXT);
 CREATE OR REPLACE FUNCTION public.get_live_session_by_token(p_token TEXT)
 RETURNS TABLE(id UUID, user_id UUID, is_active BOOLEAN, created_at TIMESTAMPTZ, expires_at TIMESTAMPTZ) AS $$
 BEGIN
@@ -136,8 +143,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
+DROP FUNCTION IF EXISTS public.get_live_locations_by_session(UUID);
 CREATE OR REPLACE FUNCTION public.get_live_locations_by_session(p_session_id UUID)
-RETURNS TABLE(latitude DOUBLE PRECISION, longitude DOUBLE PRECISION, speed DOUBLE PRECISION, heading DOUBLE PRECISION, battery DOUBLE PRECISION, timestamp TIMESTAMPTZ) AS $$
+RETURNS TABLE(latitude DOUBLE PRECISION, longitude DOUBLE PRECISION, speed DOUBLE PRECISION, heading DOUBLE PRECISION, battery DOUBLE PRECISION, "timestamp" TIMESTAMPTZ) AS $$
 BEGIN
    -- Only return if session is active
    IF EXISTS (SELECT 1 FROM public.live_sessions WHERE id = p_session_id AND is_active = true AND (expires_at IS NULL OR expires_at > NOW())) THEN
@@ -158,7 +166,10 @@ GRANT EXECUTE ON FUNCTION public.get_live_locations_by_session(UUID) TO anon, au
 -- ========================================================================================
 
 DROP POLICY IF EXISTS "Authorities can view all SOS events" ON public.sos_events;
+DROP POLICY IF EXISTS "Authorities can view all SOS events" ON public.sos_events;
 CREATE POLICY "Authorities can view all SOS events" ON public.sos_events
 FOR SELECT USING (
    public.get_user_role(auth.uid()) IN ('admin', 'government', 'enterprise') OR public.is_gov_officer(auth.uid())
 );
+
+
