@@ -65,10 +65,13 @@ const SafetyEngine = {
        score = Math.max(0, Math.min(100, Math.round(score)));
     }
 
+    const confidence = this.calculateConfidence(confidenceMetrics);
+
     return {
       score,
+      available: score !== null,
       breakdown,
-      confidence: this.calculateConfidence(confidenceMetrics),
+      confidence,
       explanation: this._generateExplanation(breakdown)
     };
   },
@@ -157,7 +160,7 @@ const SafetyEngine = {
   },
 
   _calculateRoadClassScore(highwayTags) {
-    if (!highwayTags || highwayTags.length === 0) return 50; 
+    if (!highwayTags || highwayTags.length === 0) return null; 
     
     let score = 0;
     let counts = { primary: 0, secondary: 0, residential: 0, unclassified: 0 };
@@ -208,7 +211,7 @@ const SafetyEngine = {
   },
 
   _calculateHistoricalScore(historicalIncidents) {
-    if (historicalIncidents === undefined) return 70; 
+    if (historicalIncidents === null || historicalIncidents === undefined) return null; 
     let penalty = historicalIncidents * 2; 
     return Math.max(0, 100 - penalty);
   },

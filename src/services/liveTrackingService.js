@@ -19,7 +19,7 @@ export const getShareUrl = (token) => {
 
 class LiveTrackingService {
   constructor() {
-    this.watchId = null;
+    this.watchId = null;       // Readable from outside for visibility-change detection
     this.currentSessionId = null;
     this.shareToken = null;
     this.lastSentLocation = null;

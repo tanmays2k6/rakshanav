@@ -5,6 +5,7 @@ import { mapService } from '../services/mapService'
 import { geminiService } from '../services/geminiService'
 import { tripService } from '../services/tripService'
 import { useAuth } from '../contexts/AuthContext'
+import { useTheme } from '../contexts/ThemeContext'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const luxColor = (l) => l < 5 ? '#ef4444' : l < 15 ? '#f97316' : '#22c55e'
@@ -14,13 +15,16 @@ const glass = (extra = {}) => ({
   background: 'rgba(8,12,18,0.84)',
   backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)',
   border: '1px solid rgba(255,255,255,0.08)',
-  borderRadius: '16px', ...extra,
+  borderRadius: '16px',
+  boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+  ...extra,
 })
 const glassLight = (extra = {}) => ({
-  background: 'rgba(255,255,255,0.92)',
-  backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)',
-  border: '1px solid rgba(0,0,0,0.09)',
-  borderRadius: '16px', ...extra,
+  background: '#ffffff',
+  border: '1px solid #E2E6EC',
+  borderRadius: '16px',
+  boxShadow: '0 2px 12px rgba(0,0,0,0.07)',
+  ...extra,
 })
 
 const toGeoJSON = (coords) => ({
@@ -74,7 +78,8 @@ function GpsTracker({ currentCoords, useGps, phase }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function UserView({ onAddReport, userReports = [], initialOrigin = '', initialDestination = '', autoTrigger = false, isDashboard = false, liveLocation = null, showTraffic = false, showCommunity = false, showStreetlights = false, showJurisdictions = false, communityReports = [] }) {
   const { user } = useAuth()
-  const [darkMode,     setDarkMode]     = useState(true)
+  const { isDarkMode } = useTheme()
+  const darkMode = isDarkMode
   const [phase,        setPhase]        = useState('idle')
   const [activeLocationField, setActiveLocationField] = useState(null)
   
@@ -676,8 +681,8 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
       >
         {/* Developer Diagnostics Overlay (Dev Mode Only) */}
         {showDevDiagnostics && devDiagnostics && (
-          <div style={{ position: 'absolute', top: 20, right: 20, background: 'rgba(15,23,42,0.95)', border: '1px solid #334155', borderRadius: '12px', padding: '16px', color: '#e2e8f0', zIndex: 100, fontSize: '12px', fontFamily: "'JetBrains Mono', monospace", boxShadow: '0 10px 25px rgba(0,0,0,0.5)', width: '220px' }}>
-            <div style={{ fontWeight: 'bold', color: '#60a5fa', marginBottom: '8px', borderBottom: '1px solid #334155', paddingBottom: '4px' }}>⚙ Developer Diagnostics</div>
+          <div style={{ position: 'absolute', top: 20, right: 20, background: darkMode ? 'rgba(15,23,42,0.95)' : '#ffffff', border: darkMode ? '1px solid #334155' : '1px solid #E2E6EC', borderRadius: '12px', padding: '16px', color: darkMode ? '#e2e8f0' : '#111827', zIndex: 100, fontSize: '12px', fontFamily: "'JetBrains Mono', monospace", boxShadow: darkMode ? '0 10px 25px rgba(0,0,0,0.5)' : '0 4px 20px rgba(0,0,0,0.1)', width: '220px' }}>
+            <div style={{ fontWeight: 'bold', color: '#2563eb', marginBottom: '8px', borderBottom: darkMode ? '1px solid #334155' : '1px solid #E2E6EC', paddingBottom: '4px' }}>⚙ Developer Diagnostics</div>
             <DiagnosticRow label="Geocoding Origin" status={devDiagnostics.geocodingOrigin} />
             <DiagnosticRow label="Geocoding Dest" status={devDiagnostics.geocodingDest} />
             <DiagnosticRow label="Boundary" status={devDiagnostics.boundary} />
@@ -942,12 +947,12 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
         {/* Layer Overlays (Empty States) */}
         <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '10px', zIndex: 10, pointerEvents: 'none' }}>
           {showTraffic && (
-            <div style={{ background: 'rgba(15,23,42,0.8)', border: '1px solid rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '8px', color: '#94a3b8', fontSize: '11px', backdropFilter: 'blur(10px)', fontFamily: "'Inter', sans-serif" }}>
+            <div style={{ background: darkMode ? 'rgba(15,23,42,0.85)' : 'rgba(255,255,255,0.92)', border: darkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid #E2E6EC', padding: '6px 12px', borderRadius: '8px', color: darkMode ? '#94a3b8' : '#667085', fontSize: '11px', backdropFilter: 'blur(10px)', fontFamily: "'Inter', sans-serif", boxShadow: darkMode ? 'none' : '0 2px 8px rgba(0,0,0,0.08)' }}>
               Live traffic data unavailable
             </div>
           )}
           {showStreetlights && (
-            <div style={{ background: 'rgba(15,23,42,0.8)', border: '1px solid rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '8px', color: '#94a3b8', fontSize: '11px', backdropFilter: 'blur(10px)', fontFamily: "'Inter', sans-serif" }}>
+            <div style={{ background: darkMode ? 'rgba(15,23,42,0.85)' : 'rgba(255,255,255,0.92)', border: darkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid #E2E6EC', padding: '6px 12px', borderRadius: '8px', color: darkMode ? '#94a3b8' : '#667085', fontSize: '11px', backdropFilter: 'blur(10px)', fontFamily: "'Inter', sans-serif", boxShadow: darkMode ? 'none' : '0 2px 8px rgba(0,0,0,0.08)' }}>
               Lighting data unavailable
             </div>
           )}
@@ -1071,7 +1076,7 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
               </div>
               <button 
                 onClick={handleClearResults}
-                style={{ background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '8px', padding: '6px 12px', cursor: 'pointer', color: txt('#e2e8f0', '#475569'), fontSize: '12px', fontWeight: 600 }}
+                style={{ background: darkMode ? 'rgba(255,255,255,0.08)' : '#F1F3F6', border: darkMode ? 'none' : '1px solid #E2E6EC', borderRadius: '8px', padding: '6px 12px', cursor: 'pointer', color: txt('#e2e8f0', '#667085'), fontSize: '12px', fontWeight: 600 }}
               >
                 ✕ Clear
               </button>
@@ -1100,30 +1105,30 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
 
         {/* Navigation Mode */}
         {phase === 'navigating' && activeTrip && (
-          <div style={{ ...card({ padding: '24px' }), flexShrink: 0, border: `1px solid ${getRouteColor(activeTrip.type)}`, boxShadow: `0 10px 40px ${getRouteColor(activeTrip.type)}30` }}>
+          <div style={{ ...card({ padding: '24px' }), flexShrink: 0, border: `1px solid ${getRouteColor(activeTrip.type)}`, boxShadow: `0 10px 40px ${getRouteColor(activeTrip.type)}22` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: '20px', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: '20px', color: txt('#fff', '#111827'), display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#ef4444', animation: 'pulse 1.5s infinite' }}></span>
                 Live Navigation
               </div>
             </div>
             
-            <div style={{ fontSize: '13px', color: '#e2e8f0', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-               <span style={{ color: 'transparent' }}>📍</span> 
-               <span style={{ color: 'white', fontWeight: 600 }}>{routeData?.startLabel}</span>
+            <div style={{ fontSize: '13px', color: txt('#e2e8f0', '#374151'), marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+               <span>📍</span> 
+               <span style={{ color: txt('#fff', '#111827'), fontWeight: 600 }}>{routeData?.startLabel}</span>
                <span>→</span>
-               <span style={{ color: 'white', fontWeight: 600 }}>{routeData?.endLabel}</span>
+               <span style={{ color: txt('#fff', '#111827'), fontWeight: 600 }}>{routeData?.endLabel}</span>
             </div>
             
-            <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', padding: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', padding: '12px', background: darkMode ? 'rgba(255,255,255,0.05)' : '#F7F8FA', borderRadius: '12px', border: darkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid #E2E6EC' }}>
                <div>
-                  <div style={{ fontSize: '10px', color: '#94a3b8', fontFamily: "'JetBrains Mono', monospace", textTransform: 'uppercase' }}>Est. Arrival</div>
-                  <div style={{ fontSize: '16px', fontWeight: 700, color: '#fff' }}>{activeTrip.duration}</div>
+                  <div style={{ fontSize: '10px', color: txt('#94a3b8', '#98A2B3'), fontFamily: "'JetBrains Mono', monospace", textTransform: 'uppercase' }}>Est. Arrival</div>
+                  <div style={{ fontSize: '16px', fontWeight: 700, color: txt('#fff', '#111827') }}>{activeTrip.duration}</div>
                </div>
-               <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
+               <div style={{ width: '1px', background: darkMode ? 'rgba(255,255,255,0.1)' : '#E2E6EC' }}></div>
                <div>
-                  <div style={{ fontSize: '10px', color: '#94a3b8', fontFamily: "'JetBrains Mono', monospace", textTransform: 'uppercase' }}>Distance</div>
-                  <div style={{ fontSize: '16px', fontWeight: 700, color: '#fff' }}>{activeTrip.distance}</div>
+                  <div style={{ fontSize: '10px', color: txt('#94a3b8', '#98A2B3'), fontFamily: "'JetBrains Mono', monospace", textTransform: 'uppercase' }}>Distance</div>
+                  <div style={{ fontSize: '16px', fontWeight: 700, color: txt('#fff', '#111827') }}>{activeTrip.distance}</div>
                </div>
             </div>
             
@@ -1224,12 +1229,12 @@ function RouteCard({ data, darkMode, sub, card, txt, color, routeAnalyses, route
       <div style={{ fontSize: '12px', color: sub, marginBottom: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
         <span style={{ fontSize: '14px' }}>✨</span> {routeFallbacks && routeFallbacks[data.id] ? 'Deterministic Safety Summary:' : 'AI Safety Analysis:'}
       </div>
-      <div style={{ padding: '10px 12px', background: 'rgba(15,23,42,0.4)', borderRadius: '6px', fontSize: '12px', color: 'rgba(255,255,255,0.9)', lineHeight: 1.5, marginBottom: '16px', borderLeft: `2px solid ${routeFallbacks && routeFallbacks[data.id] ? '#94a3b8' : '#60a5fa'}` }}>
+      <div style={{ padding: '10px 12px', background: darkMode ? 'rgba(15,23,42,0.4)' : '#F7F8FA', borderRadius: '6px', fontSize: '12px', color: darkMode ? 'rgba(255,255,255,0.9)' : '#374151', lineHeight: 1.5, marginBottom: '16px', borderLeft: `2px solid ${routeFallbacks && routeFallbacks[data.id] ? (darkMode ? '#94a3b8' : '#CBD5E0') : '#2563eb'}`, border: darkMode ? 'none' : '1px solid #E2E6EC', borderLeftWidth: '2px' }}>
         {routeAnalyses[data.id] ? (
           routeAnalyses[data.id]
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-             <div style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2px solid rgba(96,165,250,0.3)', borderTopColor: '#60a5fa', animation: 'spin 1s linear infinite' }} />
+             <div style={{ width: '12px', height: '12px', borderRadius: '50%', border: `2px solid ${darkMode ? 'rgba(96,165,250,0.3)' : 'rgba(37,99,235,0.2)'}`, borderTopColor: '#2563eb', animation: 'spin 1s linear infinite' }} />
              <span style={{ color: sub }}>Analyzing...</span>
           </div>
         )}
@@ -1482,7 +1487,7 @@ function ScoreRing({ score, color }) {
   return (
     <div style={{ position: 'relative', width: '56px', height: '56px', flexShrink: 0 }}>
       <svg width="56" height="56" style={{ transform: 'rotate(-90deg)' }}>
-        <circle cx="28" cy="28" r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={stroke} />
+        <circle cx="28" cy="28" r={r} fill="none" stroke="rgba(128,128,128,0.12)" strokeWidth={stroke} />
         <circle cx="28" cy="28" r={r} fill="none" stroke={color} strokeWidth={stroke} strokeDasharray={circ} strokeDashoffset={circ - pct} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 1.2s ease' }} />
       </svg>
       <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
@@ -1502,8 +1507,8 @@ function Pill({ label, icon, color }) {
   )
 }
 
-function Spinner() {
-  return <div style={{ width: '14px', height: '14px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />
+function Spinner({ dark = true }) {
+  return <div style={{ width: '14px', height: '14px', borderRadius: '50%', border: `2px solid ${dark ? 'rgba(255,255,255,0.3)' : 'rgba(37,99,235,0.2)'}`, borderTopColor: dark ? '#fff' : '#2563eb', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />
 }
 
 const pinStyle = (bg, color, shadow) => ({

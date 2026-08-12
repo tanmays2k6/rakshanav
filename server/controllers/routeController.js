@@ -264,6 +264,7 @@ exports.getRouteMetrics = async (req, res, next) => {
     return res.json({
       success: true,
       score: safetyData.score,
+      available: safetyData.available,
       confidence: safetyData.confidence,
       infrastructure: infrastructure,
       nearestSafeHaven: nearestSafeHaven,
@@ -286,61 +287,93 @@ exports.getPointSafety = async (req, res, next) => {
        return res.status(400).json({ success: false, error: 'Latitude and longitude required.' });
     }
 
-    const radius = 500;
-    
-    const query = `
-      [out:json][timeout:10];
-      (
-        node["amenity"="police"](around:${radius},${lat},${lng});
-        node["amenity"="hospital"](around:${radius},${lat},${lng});
-        node["amenity"="clinic"](around:${radius},${lat},${lng});
-        node["shop"](around:${radius},${lat},${lng});
-        node["amenity"="restaurant"](around:${radius},${lat},${lng});
-      );
-      out count;
-    `;
+    const numericLat = parseFloat(lat);
+    const numericLng = parseFloat(lng);
+    const coords = [[numericLng, numericLat], [numericLng, numericLat]];
 
-    let score = 65;
-    let reasons = ['Moderate activity area.'];
-    let policeCount = 0;
-    let hospitalCount = 0;
-    let commercialCount = 0;
+    let infrastructure = null;
+    let diagnostics = { overpass: { status: 'pending' }, safety: { status: 'pending' } };
 
     try {
-      const response = await enqueueOverpassTask(() => fetch('https://overpass-api.de/api/interpreter', {
-        method: 'POST',
-        body: query,
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'application/json',
-          'User-Agent': 'RakshaNavApp/1.0'
-        }
-      }));
-      if (response.ok) {
-        const data = await response.json();
-        const counts = data.elements[0]?.tags || {};
-        policeCount = parseInt(counts.nodes || 0); 
-        let totalFeatures = parseInt(counts.nodes || 0) + parseInt(counts.ways || 0);
-        
-        if (totalFeatures > 20) {
-           score = 92;
-           reasons = ['Highly active commercial area with good natural surveillance.'];
-        } else if (totalFeatures > 5) {
-           score = 75;
-           reasons = ['Moderate activity area.'];
-        } else {
-           score = 45;
-           reasons = ['Low activity area, limited natural surveillance.'];
-        }
+      infrastructure = await routeFeatureService.extractFeaturesForPolyline(coords);
+      diagnostics.overpass = { status: 'success' };
+    } catch (e) {
+      console.warn(`[Point Safety] Overpass API failed: ${e.message}`);
+      diagnostics.overpass = { status: 'error', error: e.message };
+    }
+
+    let weatherData = null;
+    let weatherSuccess = false;
+    try {
+      const wRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${numericLat}&longitude=${numericLng}&current=weather_code`);
+      if (wRes.ok) {
+        const wJson = await wRes.json();
+        const wCode = wJson.current?.weather_code || 0;
+        weatherData = { isRaining: false, isFoggy: false };
+        if (wCode >= 50 && wCode <= 69) weatherData.isRaining = true;
+        if (wCode === 45 || wCode === 48) weatherData.isFoggy = true;
+        weatherSuccess = true;
       }
-    } catch(e) {
-      console.warn("Point safety overpass failed:", e.message);
+    } catch (e) {
+      console.warn('[Point Safety] Weather fetch failed.');
+    }
+
+    let reportsArray = null;
+    let supabaseSuccess = false;
+    try {
+      const supabaseUrl = process.env.VITE_SUPABASE_URL;
+      const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      if (supabaseUrl && supabaseKey) {
+         const sRes = await fetch(`${supabaseUrl}/rest/v1/incident_reports?status=eq.pending&select=*`, {
+           headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+         });
+         if (sRes.ok) {
+           supabaseSuccess = true;
+           const allReports = await sRes.json();
+           const geoUtils = require('../utils/geoUtils');
+           reportsArray = allReports.filter(r => geoUtils.isPointNearPolyline(coords, r.latitude, r.longitude, 500));
+         }
+      }
+    } catch (e) {
+      console.warn('[Point Safety] Supabase fetch failed:', e.message);
+    }
+
+    const hour = new Date().getHours();
+    const isNightTime = hour < 6 || hour > 18;
+
+    const confidenceMetrics = {
+      gps: true,
+      infrastructure: diagnostics.overpass.status === 'success',
+      weather: weatherSuccess, 
+      reports: supabaseSuccess,
+      routing: false,
+      ai: false
+    };
+
+    let safetyData = { score: null, available: false, breakdown: null, explanation: null, confidence: 0 };
+    
+    try {
+      safetyData = SafetyEngine.calculateLiveSafety(
+        infrastructure, 
+        reportsArray, 
+        weatherData, 
+        { isNightTime },
+        confidenceMetrics
+      );
+      diagnostics.safety = { status: 'success' };
+    } catch (e) {
+      console.warn(`[Point Safety] Engine failed: ${e.message}`);
+      diagnostics.safety = { status: 'error', error: e.message };
     }
 
     return res.json({
        success: true,
-       score,
-       reasons
+       score: safetyData.score,
+       available: safetyData.available,
+       confidence: safetyData.confidence,
+       breakdown: safetyData.breakdown,
+       explanation: safetyData.explanation,
+       diagnostics
     });
 
   } catch (error) {

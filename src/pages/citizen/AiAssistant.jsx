@@ -4,9 +4,11 @@ import ReactMarkdown from 'react-markdown';
 import { useNavigate, matchRoutes } from 'react-router-dom';
 import { appRoutes } from '../../config/routes';
 import { useGeminiChat } from '../../hooks/useGemini';
+import { useTheme } from '../../contexts/ThemeContext';
 
 export default function AiAssistant() {
   const { messages, isTyping, lastError, sendMessage, stopGeneration } = useGeminiChat();
+  const { isDarkMode } = useTheme();
   const [input, setInput] = useState('');
   const [healthStatus, setHealthStatus] = useState('checking'); // 'checking' | 'connected' | 'unavailable'
   const endOfMessagesRef = useRef(null);
@@ -116,15 +118,23 @@ export default function AiAssistant() {
   }, [messages, isTyping]);
 
   return (
-    <div className="flex flex-col h-full bg-[#080c10]/50 rounded-3xl border border-white/5 overflow-hidden shadow-2xl relative">
+    <div className={`flex flex-col h-full rounded-3xl border overflow-hidden shadow-xl relative transition-colors
+      ${isDarkMode 
+        ? 'bg-[rgba(8,12,18,0.5)] border-[rgba(255,255,255,0.06)]'
+        : 'bg-white border-[#E2E6EC]'
+      }`}>
       
       {/* Header */}
-      <div className="h-16 border-b border-white/10 flex items-center px-6 gap-3 shrink-0 glass-panel rounded-none border-t-0 border-l-0 border-r-0">
-        <div className="p-2 bg-brand-blue/20 rounded-lg">
-          <Bot className="w-5 h-5 text-brand-blue" />
+      <div className={`h-16 border-b flex items-center px-6 gap-3 shrink-0
+        ${isDarkMode 
+          ? 'border-[rgba(255,255,255,0.08)] bg-[rgba(8,12,18,0.8)]' 
+          : 'border-[#E2E6EC] bg-white'
+        }`}>
+        <div className={`p-2 rounded-lg ${isDarkMode ? 'bg-[rgba(37,99,235,0.15)]' : 'bg-[#EFF6FF]'}`}>
+          <Bot className="w-5 h-5 text-[#2563EB]" />
         </div>
         <div>
-          <h2 className="font-display font-bold text-white tracking-wide">Gemini Safety Assistant</h2>
+          <h2 className={`font-display font-bold tracking-wide ${isDarkMode ? 'text-white' : 'text-[#111827]'}`}>Gemini Safety Assistant</h2>
           <p className="text-xs font-mono flex items-center gap-1.5">
             {healthStatus === 'connected' && (
               <>
@@ -154,18 +164,22 @@ export default function AiAssistant() {
           <div key={msg.id} className={`flex gap-4 max-w-[80%] ${msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''}`}>
             
             <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-              msg.role === 'ai' ? 'bg-white/5 border border-white/10 text-brand-blue' : 'bg-brand-blue text-white'
+              msg.role === 'ai' 
+                ? (isDarkMode ? 'bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] text-[#2563EB]' : 'bg-[#EFF6FF] border border-[#DBEAFE] text-[#2563EB]')
+                : 'bg-[#2563EB] text-white'
             }`}>
               {msg.role === 'ai' ? <Sparkles className="w-4 h-4" /> : <User className="w-4 h-4" />}
             </div>
 
             <div className={`p-4 rounded-2xl text-sm leading-relaxed ${
               msg.role === 'user' 
-                ? 'bg-brand-blue text-white rounded-tr-sm' 
-                : 'glass-panel rounded-tl-sm text-gray-200 w-full'
+                ? 'bg-[#2563EB] text-white rounded-tr-sm' 
+                : (isDarkMode
+                    ? 'bg-[rgba(8,12,18,0.84)] border border-[rgba(255,255,255,0.07)] rounded-tl-sm text-gray-200 w-full'
+                    : 'bg-[#F7F8FA] border border-[#E2E6EC] rounded-tl-sm text-[#374151] w-full')
             }`}>
               {msg.role === 'ai' ? (
-                <div className="prose prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-white/5 prose-pre:border prose-pre:border-white/10">
+                <div className={`prose max-w-none prose-p:leading-relaxed ${isDarkMode ? 'prose-invert prose-pre:bg-white/5 prose-pre:border prose-pre:border-white/10' : 'prose-pre:bg-gray-50 prose-pre:border prose-pre:border-gray-200'}`}>
                   <ReactMarkdown>{cleanTextForMarkdown(msg.text)}</ReactMarkdown>
                   
                   {msg.text.includes('Gemini Safety Assistant is temporarily unavailable') && !isTyping && (
@@ -228,8 +242,8 @@ export default function AiAssistant() {
                   )}
 
                   {msg.text && !isTyping && (
-                    <div className="flex gap-2 mt-3 pt-3 border-t border-white/10">
-                      <button onClick={() => handleCopy(msg.text)} className="text-xs flex items-center gap-1 text-gray-400 hover:text-white transition-colors">
+                    <div className={`flex gap-2 mt-3 pt-3 border-t ${isDarkMode ? 'border-[rgba(255,255,255,0.08)]' : 'border-[#E2E6EC]'}`}>
+                      <button onClick={() => handleCopy(msg.text)} className={`text-xs flex items-center gap-1 transition-colors ${isDarkMode ? 'text-gray-400 hover:text-white' : 'text-[#667085] hover:text-[#111827]'}`}>
                         <Copy className="w-3 h-3" /> Copy
                       </button>
                     </div>
@@ -245,13 +259,15 @@ export default function AiAssistant() {
         
         {isTyping && (
           <div className="flex gap-4 max-w-[80%]">
-            <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 text-brand-blue flex items-center justify-center shrink-0">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-[#2563EB]
+              ${isDarkMode ? 'bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)]' : 'bg-[#EFF6FF] border border-[#DBEAFE]'}`}>
               <Sparkles className="w-4 h-4" />
             </div>
-            <div className="glass-panel p-4 rounded-2xl rounded-tl-sm flex items-center gap-2">
-              <span className="w-2 h-2 bg-brand-blue rounded-full animate-bounce"></span>
-              <span className="w-2 h-2 bg-brand-blue rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-              <span className="w-2 h-2 bg-brand-blue rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+            <div className={`p-4 rounded-2xl rounded-tl-sm flex items-center gap-2
+              ${isDarkMode ? 'bg-[rgba(8,12,18,0.84)] border border-[rgba(255,255,255,0.07)]' : 'bg-[#F7F8FA] border border-[#E2E6EC]'}`}>
+              <span className="w-2 h-2 bg-[#2563EB] rounded-full animate-bounce"></span>
+              <span className="w-2 h-2 bg-[#2563EB] rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+              <span className="w-2 h-2 bg-[#2563EB] rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
             </div>
           </div>
         )}
@@ -268,9 +284,13 @@ export default function AiAssistant() {
               <button 
                 key={idx} 
                 onClick={() => handleSend(prompt)}
-                className="text-xs bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5"
+                className={`text-xs border px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5
+                  ${isDarkMode 
+                    ? 'bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] border-[rgba(255,255,255,0.1)] text-gray-300'
+                    : 'bg-[#F1F3F6] hover:bg-[#E2E6EC] border-[#E2E6EC] text-[#667085]'
+                  }`}
               >
-                <Sparkles className="w-3 h-3 text-brand-blue" />
+                <Sparkles className="w-3 h-3 text-[#2563EB]" />
                 {prompt}
               </button>
             ))}
@@ -285,7 +305,11 @@ export default function AiAssistant() {
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSend()}
             placeholder="Ask about safe routes, areas, or emergency info..."
-            className="w-full bg-white/5 border border-white/10 text-white placeholder-gray-500 text-sm rounded-2xl pl-4 pr-12 py-4 outline-none focus:border-brand-blue/50 focus:bg-white/10 transition-all shadow-inner"
+            className={`w-full text-sm rounded-2xl pl-4 pr-12 py-4 outline-none transition-all shadow-inner
+              ${isDarkMode 
+                ? 'bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.08)] text-white placeholder-gray-500 focus:border-[rgba(37,99,235,0.5)] focus:bg-[rgba(255,255,255,0.08)]'
+                : 'bg-[#F7F8FA] border border-[#E2E6EC] text-[#111827] placeholder-[#98A2B3] focus:border-[#2563EB] focus:ring-2 focus:ring-[rgba(37,99,235,0.15)]'
+              }`}
           />
           {isTyping ? (
             <button 

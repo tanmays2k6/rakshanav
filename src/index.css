@@ -1,7 +1,91 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Syne:wght@400;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ── CSS Custom Properties (Light Mode = default) ── */
+:root {
+  /* Backgrounds */
+  --bg-page: #F7F8FA;
+  --bg-surface: #FFFFFF;
+  --bg-surface-2: #F1F3F6;
+  --bg-surface-3: #E9ECF1;
+
+  /* Borders */
+  --border: #E2E6EC;
+  --border-strong: #CBD5E0;
+
+  /* Text */
+  --text-primary: #111827;
+  --text-secondary: #667085;
+  --text-muted: #98A2B3;
+  --text-inverse: #FFFFFF;
+
+  /* Semantic Colors */
+  --primary: #2563EB;
+  --primary-hover: #1D4ED8;
+  --primary-subtle: rgba(37, 99, 235, 0.08);
+  --success: #16A34A;
+  --success-subtle: rgba(22, 163, 74, 0.08);
+  --warning: #F59E0B;
+  --warning-subtle: rgba(245, 158, 11, 0.10);
+  --danger: #DC2626;
+  --danger-subtle: rgba(220, 38, 38, 0.08);
+  --ai: #7C3AED;
+  --ai-subtle: rgba(124, 58, 237, 0.08);
+
+  /* Shadows (soft, for light mode) */
+  --shadow-xs: 0 1px 3px rgba(0,0,0,0.06);
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.07);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.09);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.10);
+  --shadow-xl: 0 16px 48px rgba(0,0,0,0.12);
+
+  /* Glass / Surface */
+  --glass-bg: rgba(255,255,255,0.97);
+  --glass-border: rgba(0,0,0,0.06);
+  --glass-blur: blur(16px);
+}
+
+/* ── Dark Mode Overrides ── */
+.dark {
+  --bg-page: #080c10;
+  --bg-surface: rgba(8,12,18,0.84);
+  --bg-surface-2: rgba(255,255,255,0.05);
+  --bg-surface-3: rgba(255,255,255,0.08);
+
+  --border: rgba(255,255,255,0.08);
+  --border-strong: rgba(255,255,255,0.15);
+
+  --text-primary: #e8edf2;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-inverse: #FFFFFF;
+
+  --primary: #3b82f6;
+  --primary-hover: #60a5fa;
+  --primary-subtle: rgba(59,130,246,0.10);
+  --success: #22c55e;
+  --success-subtle: rgba(34,197,94,0.10);
+  --warning: #f97316;
+  --warning-subtle: rgba(249,115,22,0.10);
+  --danger: #ef4444;
+  --danger-subtle: rgba(239,68,68,0.10);
+  --ai: #a855f7;
+  --ai-subtle: rgba(168,85,247,0.10);
+
+  --shadow-xs: 0 1px 4px rgba(0,0,0,0.3);
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.35);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.40);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.45);
+  --shadow-xl: 0 16px 48px rgba(0,0,0,0.50);
+
+  --glass-bg: rgba(8,12,18,0.84);
+  --glass-border: rgba(255,255,255,0.06);
+}
+
+/* ── Base Styles ── */
 @layer base {
   *, *::before, *::after {
     box-sizing: border-box;
@@ -14,71 +98,158 @@
   }
   body {
     font-family: 'Inter', sans-serif;
-    background: #080c10;
-    color: #e8edf2;
+    background: var(--bg-page);
+    color: var(--text-primary);
     overflow-x: hidden;
     width: 100%;
     -webkit-tap-highlight-color: transparent;
+    transition: background 0.25s ease, color 0.25s ease;
   }
 }
 
+/* ── Utility Classes ── */
 @layer utilities {
+  /* Dark glass panel — dark mode */
   .glass-panel {
-    @apply bg-[rgba(8,12,18,0.6)] border border-[rgba(255,255,255,0.03)] rounded-[16px] backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)];
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    box-shadow: var(--shadow-md);
+    transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
   }
-  
+
+  /* Light glass panel variant */
   .glass-panel-light {
-    @apply bg-[rgba(255,255,255,0.85)] border border-[rgba(0,0,0,0.04)] rounded-[16px] backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.05)];
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* Surface card — adapts to theme */
+  .surface-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow-sm);
   }
 
   .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-emerald-500;
+  }
+
+  .dark .text-gradient {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400;
   }
-  
+
   .shimmer-bg {
-    @apply bg-gradient-to-r from-white/5 via-white/10 to-white/5 bg-[length:400%_100%] animate-shimmer;
+    background: linear-gradient(90deg, var(--bg-surface-2) 25%, var(--bg-surface-3) 50%, var(--bg-surface-2) 75%);
+    background-size: 400% 100%;
+    animation: shimmer 2s linear infinite;
   }
-  
+
   .hover-lift {
-    @apply transition-transform duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-brand-blue/10;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
   }
 
   .hover-glow {
-    @apply transition-all duration-300 hover:shadow-[0_0_15px_rgba(59,130,246,0.15)];
+    transition: box-shadow 0.3s ease;
+  }
+  .hover-glow:hover {
+    box-shadow: 0 0 15px rgba(37,99,235,0.15);
   }
 
-  .radius-card {
-    @apply rounded-[16px];
-  }
-  .radius-btn {
-    @apply rounded-[12px];
-  }
-  .radius-input {
-    @apply rounded-[12px];
-  }
-  .radius-float {
-    @apply rounded-[14px];
+  .radius-card { @apply rounded-[16px]; }
+  .radius-btn  { @apply rounded-[12px]; }
+  .radius-input { @apply rounded-[12px]; }
+  .radius-float { @apply rounded-[14px]; }
+
+  /* Theme-aware skeleton */
+  .skeleton {
+    background: var(--bg-surface-2);
+    border-radius: 8px;
+    animation: pulse 1.5s cubic-bezier(0.4,0,0.6,1) infinite;
   }
 }
 
+/* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(30,58,95,0.5); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(30,58,95,0.8); }
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
 
 /* Hide scrollbar on mobile but allow scrolling */
 @media (max-width: 1023px) {
-  .custom-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
+  .custom-scrollbar::-webkit-scrollbar { display: none; }
   .custom-scrollbar {
-    -ms-overflow-style: none;  /* IE and Edge */
-    scrollbar-width: none;  /* Firefox */
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 }
 
-/* Safe Area Insets Helpers */
+/* ── Safe Area Helpers ── */
 .pb-safe { padding-bottom: env(safe-area-inset-bottom, 20px); }
 .pt-safe { padding-top: env(safe-area-inset-top, 20px); }
 .mb-safe { margin-bottom: env(safe-area-inset-bottom, 20px); }
 .mt-safe { margin-top: env(safe-area-inset-top, 20px); }
+
+/* ── Keyframes ── */
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes fadeUp {
+  0%   { opacity: 0; transform: translateY(15px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 10px rgba(34,197,94,0.4); }
+  50%       { box-shadow: 0 0 25px rgba(34,197,94,0.8); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+/* ── MapLibre popup light mode fix ── */
+.maplibregl-popup-content {
+  background: var(--bg-surface) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  box-shadow: var(--shadow-md) !important;
+  padding: 0 !important;
+}
+.maplibregl-popup-tip {
+  border-top-color: var(--bg-surface) !important;
+  border-bottom-color: var(--bg-surface) !important;
+}
+.maplibregl-popup-close-button {
+  color: var(--text-secondary) !important;
+  font-size: 16px !important;
+  line-height: 1 !important;
+  padding: 6px 8px !important;
+}
+.maplibregl-popup-close-button:hover {
+  color: var(--text-primary) !important;
+  background: var(--bg-surface-2) !important;
+}

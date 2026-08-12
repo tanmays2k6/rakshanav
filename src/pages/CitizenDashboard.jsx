@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, MapPin, Activity, Navigation, AlertTriangle, 
-  Bot, Clock, Star, Map, Users, ChevronRight, Zap, Navigation2, 
-  RefreshCw, Layers, Radio, LocateFixed, Maximize
+  Bot, Map, Users, ChevronRight, Zap, Navigation2, 
+  RefreshCw, Radio, Maximize
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import UserView from '../components/UserView';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { Link, useNavigate } from 'react-router-dom';
 
-// Import our new live services
 import { locationService } from '../services/locationService';
 import { placesService } from '../services/placesService';
 import { weatherService } from '../services/weatherService';
@@ -18,16 +18,15 @@ import { SafetyEngine } from '../lib/SafetyEngine';
 
 export default function CitizenDashboard() {
   const { user } = useAuth();
+  const { isDarkMode } = useTheme();
   const navigate = useNavigate();
   
-  // Real Data States
   const [loading, setLoading] = useState(true);
-  const [gpsState, setGpsState] = useState('LOADING'); // LOADING, AVAILABLE, DENIED, ERROR
-  const [havenState, setHavenState] = useState('LOADING'); // LOADING, FOUND, EMPTY, ERROR
+  const [gpsState, setGpsState] = useState('LOADING');
+  const [havenState, setHavenState] = useState('LOADING');
   const lastSearchedRef = React.useRef(null);
   
   const [errorMsg, setErrorMsg] = useState(null);
-  
   const [liveLocation, setLiveLocation] = useState(null);
   const [addressData, setAddressData] = useState(null);
   const [nearestHaven, setNearestHaven] = useState(null);
@@ -37,11 +36,9 @@ export default function CitizenDashboard() {
   const [jurisdiction, setJurisdiction] = useState(null);
   const [jurisdictionLoading, setJurisdictionLoading] = useState(false);
   
-  // Real stats from Supabase
   const [reports, setReports] = useState([]);
   const [tripsCount, setTripsCount] = useState(0);
   
-  // Map Toggles
   const [showTraffic, setShowTraffic] = useState(true);
   const [showCommunity, setShowCommunity] = useState(true);
   const [showStreetlights, setShowStreetlights] = useState(false);
@@ -49,7 +46,6 @@ export default function CitizenDashboard() {
   const [showJurisdictions, setShowJurisdictions] = useState(false);
 
   const fetchLiveData = async () => {
-    // Only set the global loading state if we don't have location yet to avoid flashing UI on background refetches
     if (!liveLocation) setLoading(true);
     
     let position;
@@ -67,17 +63,14 @@ export default function CitizenDashboard() {
         setGpsState('ERROR');
       }
       setLoading(false);
-      return; // Halt if GPS fails; cannot fetch havens or other location-based data
+      return;
     }
 
-    // Determine if we need to fetch havens based on distance moved (>200m)
     const lastLoc = lastSearchedRef.current;
     let shouldFetchHavens = true;
     if (lastLoc && nearestHaven) {
       const dist = placesService.calculateDistance(lastLoc.lat, lastLoc.lng, position.lat, position.lng);
-      if (dist < 0.2) {
-        shouldFetchHavens = false;
-      }
+      if (dist < 0.2) shouldFetchHavens = false;
     }
 
     try {
@@ -90,10 +83,10 @@ export default function CitizenDashboard() {
       
       let havensPromise = Promise.resolve({ status: 'skipped' });
       if (shouldFetchHavens) {
-         setHavenState('LOADING');
-         havensPromise = placesService.getNearbyHavens(position.lat, position.lng)
-           .then(res => ({ status: 'fulfilled', value: res }))
-           .catch(err => ({ status: 'rejected', reason: err }));
+        setHavenState('LOADING');
+        havensPromise = placesService.getNearbyHavens(position.lat, position.lng)
+          .then(res => ({ status: 'fulfilled', value: res }))
+          .catch(err => ({ status: 'rejected', reason: err }));
       }
 
       const [address, weather, reportsData, tripsData] = await Promise.allSettled(fetchPromises);
@@ -116,101 +109,65 @@ export default function CitizenDashboard() {
       let weatherCode = 0;
       let windSpeed = 0;
 
-      if (address.status === 'fulfilled') {
-        setAddressData(address.value);
-      }
-
+      if (address.status === 'fulfilled') setAddressData(address.value);
       if (weather.status === 'fulfilled') {
         setWeatherData(weather.value);
         weatherCode = weather.value.weather_code;
         windSpeed = weather.value.wind_speed_10m;
       }
-      
-      if (reportsData.status === 'fulfilled' && reportsData.value.data) {
-        setReports(reportsData.value.data);
-      }
-      
-      if (tripsData.status === 'fulfilled' && tripsData.value.data) {
-        setTripsCount(tripsData.value.data.length);
-      }
+      if (reportsData.status === 'fulfilled' && reportsData.value.data) setReports(reportsData.value.data);
+      if (tripsData.status === 'fulfilled' && tripsData.value.data) setTripsCount(tripsData.value.data.length);
 
-      // 3. Fetch Real Nearby Alerts & Build Infrastructure Object
       let realAlerts = [];
       let supabaseSuccess = false;
       try {
-        // Pseudo-bounding box for 5km (approx 0.045 degrees)
         const lat = position.lat;
         const lng = position.lng;
         const offset = 0.045;
-        
         const { data, error } = await supabase
           .from('public_incident_view')
           .select('*')
           .eq('status', 'pending')
-          .gte('lat', lat - offset)
-          .lte('lat', lat + offset)
-          .gte('lng', lng - offset)
-          .lte('lng', lng + offset)
+          .gte('lat', lat - offset).lte('lat', lat + offset)
+          .gte('lng', lng - offset).lte('lng', lng + offset)
           .order('created_at', { ascending: false })
           .limit(10);
-          
-        if (!error && data) {
-           realAlerts = data;
-           supabaseSuccess = true;
-        }
-      } catch (e) {
-        console.warn('Failed to fetch alerts', e);
-      }
+        if (!error && data) { realAlerts = data; supabaseSuccess = true; }
+      } catch (e) { console.warn('Failed to fetch alerts', e); }
       setNearbyAlerts(realAlerts);
 
-      // 4. Fetch Police Jurisdiction
       let currentJurisdiction = null;
       try {
         setJurisdictionLoading(true);
         const { data: jData, error: jError } = await supabase.rpc('get_jurisdiction_by_location', { lat: position.lat, lng: position.lng });
-        if (!jError && jData && jData.length > 0) {
-          currentJurisdiction = jData[0];
-        }
-      } catch (e) {
-        console.warn('Failed to fetch jurisdiction', e);
-      } finally {
-        setJurisdictionLoading(false);
-      }
+        if (!jError && jData && jData.length > 0) currentJurisdiction = jData[0];
+      } catch (e) { console.warn('Failed to fetch jurisdiction', e); }
+      finally { setJurisdictionLoading(false); }
       setJurisdiction(currentJurisdiction);
 
-      // Compute Live Safety Score using V2 Engine
-      const hour = new Date().getHours();
-      const isNight = hour < 6 || hour > 18;
+      let metrics = null;
+      try {
+        const envUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const res = await fetch(`${envUrl}/api/route/safety/point?lat=${position.lat}&lng=${position.lng}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.available) {
+            metrics = {
+              score: data.score,
+              breakdown: data.breakdown,
+              explanation: data.explanation,
+              confidence: data.confidence,
+              riskCategory: data.score > 80 ? 'Highly Safe' : data.score > 60 ? 'Moderately Safe' : 'Exercise Caution'
+            };
+          } else {
+            metrics = { score: null, available: false, riskCategory: 'Insufficient data' };
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to fetch point safety', e);
+        metrics = { score: null, available: false, riskCategory: 'Service Unavailable' };
+      }
       
-      const infrastructure = {
-        police: currentJurisdiction ? 1 : null, // Not zero, null if unknown
-        hospitals: nearestHaven && nearestHaven.type === 'hospital' ? 1 : null,
-        commercial: null, 
-        parks: null
-      };
-
-      const weatherObj = weather.status === 'fulfilled' ? {
-        isRaining: weatherCode >= 50 && weatherCode <= 69,
-        isFoggy: weatherCode === 45 || weatherCode === 48,
-        windSpeed: windSpeed
-      } : { isRaining: false, isFoggy: false, windSpeed: 0 };
-
-      const confidenceMetrics = {
-        gps: gpsState === 'AVAILABLE',
-        infrastructure: havenState === 'FOUND',
-        weather: weather.status === 'fulfilled',
-        reports: supabaseSuccess,
-        routing: true, // Not routing
-        ai: true // Not AI
-      };
-
-      const metrics = SafetyEngine.calculateLiveSafety(
-        infrastructure,
-        realAlerts,
-        weatherObj,
-        { isNightTime: isNight },
-        confidenceMetrics
-      );
       setSafetyMetrics(metrics);
 
     } catch (err) {
@@ -227,39 +184,40 @@ export default function CitizenDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleAddReport = async (report) => {
-    // Refresh context if report added
-    fetchLiveData();
-  };
+  const handleAddReport = async () => { fetchLiveData(); };
 
   const handleNavigateToHaven = () => {
     if (nearestHaven) {
       navigate('/dashboard/navigation', {
-        state: {
-          origin: liveLocation ? 'Current Location' : '',
-          destination: nearestHaven.name,
-          autoTrigger: true
-        }
+        state: { origin: liveLocation ? 'Current Location' : '', destination: nearestHaven.name, autoTrigger: true }
       });
     }
   };
 
-  const formatHavenDistance = (km) => {
-    if (km < 1) return `${Math.round(km * 1000)} m away`;
-    return `${km.toFixed(1)} km away`;
-  };
+  const formatHavenDistance = (km) => km < 1 ? `${Math.round(km * 1000)} m away` : `${km.toFixed(1)} km away`;
 
   const getHavenIcon = (type) => {
     switch (type?.toLowerCase()) {
-      case 'police': return '🛡 Police Station';
-      case 'hospital': return '🏥 Hospital';
-      case 'clinic': return '⚕ Clinic';
-      case 'fire_station': return '🚒 Fire Station';
-      case 'pharmacy': return '💊 Pharmacy';
-      case 'atm': return '💳 ATM';
+      case 'police':      return '🛡 Police Station';
+      case 'hospital':    return '🏥 Hospital';
+      case 'clinic':      return '⚕ Clinic';
+      case 'fire_station':return '🚒 Fire Station';
+      case 'pharmacy':    return '💊 Pharmacy';
+      case 'atm':         return '💳 ATM';
       default: return type ? type.charAt(0).toUpperCase() + type.slice(1) : 'Safe Haven';
     }
   };
+
+  // Theming helpers
+  const surface = isDarkMode
+    ? 'bg-[rgba(8,12,18,0.84)] border border-[rgba(255,255,255,0.07)] shadow-[0_4px_20px_rgba(0,0,0,0.4)]'
+    : 'bg-white border border-[#E2E6EC] shadow-[0_2px_12px_rgba(0,0,0,0.06)]';
+
+  const textPrimary = isDarkMode ? 'text-white' : 'text-[#111827]';
+  const textSecondary = isDarkMode ? 'text-gray-400' : 'text-[#667085]';
+  const textMuted = isDarkMode ? 'text-gray-500' : 'text-[#98A2B3]';
+  const divider = isDarkMode ? 'border-[rgba(255,255,255,0.05)]' : 'border-[#E2E6EC]';
+  const itemBg = isDarkMode ? 'bg-[rgba(255,255,255,0.04)] border-[rgba(255,255,255,0.06)]' : 'bg-[#F7F8FA] border-[#E2E6EC]';
 
   return (
     <motion.div 
@@ -270,34 +228,42 @@ export default function CitizenDashboard() {
     >
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start">
         
-        {/* ── LeftContent ── */}
+        {/* ── Left Content ── */}
         <div className="flex flex-col gap-6 min-w-0 w-auto">
           
-          {/* KPI Cards (4 cols) */}
+          {/* KPI Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             <KpiCard 
+              isDarkMode={isDarkMode}
+              surface={surface} textPrimary={textPrimary} textSecondary={textSecondary}
               title="Live Safety Score" 
-              value={safetyMetrics ? `${safetyMetrics.score}/100` : 'N/A'}
+              value={safetyMetrics && safetyMetrics.score !== null ? `${safetyMetrics.score}/100` : 'N/A'}
               subtitle={safetyMetrics ? safetyMetrics.riskCategory : 'Awaiting data'}
-              icon={<ShieldCheck className="w-[18px] h-[18px] text-brand-neonGreen" />} 
+              icon={<ShieldCheck className="w-[18px] h-[18px] text-[#16A34A]" />}
+              iconBg={isDarkMode ? 'bg-[rgba(34,197,94,0.1)] border-[rgba(34,197,94,0.2)]' : 'bg-[#F0FDF4] border-[#BBF7D0]'}
               trend="Live"
-              glow="rgba(34,197,94,0.15)"
+              trendColor={isDarkMode ? 'bg-[rgba(22,163,74,0.1)] border-[rgba(22,163,74,0.2)] text-[#22c55e]' : 'bg-[#F0FDF4] border-[#BBF7D0] text-[#16A34A]'}
               loading={loading}
-              isScore={true}
+              isScore={safetyMetrics?.score !== null}
               scoreValue={safetyMetrics?.score || 0}
             />
             <KpiCard 
+              isDarkMode={isDarkMode}
+              surface={surface} textPrimary={textPrimary} textSecondary={textSecondary}
               title="Current Location" 
               value={gpsState === 'AVAILABLE' && addressData ? (addressData.address.suburb || addressData.address.city_district || 'Unknown') : (gpsState === 'DENIED' ? 'Location denied' : 'Location unavailable')}
               subtitle={gpsState === 'AVAILABLE' && liveLocation ? `Accuracy: ±${Math.round(liveLocation.accuracy)}m` : (gpsState === 'LOADING' ? 'Finding your location...' : 'Check permissions')}
-              icon={<MapPin className="w-[18px] h-[18px] text-brand-blue" />} 
+              icon={<MapPin className="w-[18px] h-[18px] text-[#2563EB]" />}
+              iconBg={isDarkMode ? 'bg-[rgba(37,99,235,0.1)] border-[rgba(37,99,235,0.2)]' : 'bg-[#EFF6FF] border-[#DBEAFE]'}
               trend="GPS"
-              glow="rgba(59,130,246,0.15)"
+              trendColor={isDarkMode ? 'bg-[rgba(37,99,235,0.1)] border-[rgba(37,99,235,0.2)] text-[#3b82f6]' : 'bg-[#EFF6FF] border-[#DBEAFE] text-[#2563EB]'}
               loading={gpsState === 'LOADING'}
               actionIcon={<RefreshCw className={`w-3 h-3 ${gpsState === 'LOADING' ? 'animate-spin' : ''}`} />}
               onAction={fetchLiveData}
             />
             <KpiCard 
+              isDarkMode={isDarkMode}
+              surface={surface} textPrimary={textPrimary} textSecondary={textSecondary}
               title="Nearest Safe Haven" 
               value={
                 havenState === 'FOUND' && nearestHaven ? getHavenIcon(nearestHaven.type) :
@@ -311,159 +277,199 @@ export default function CitizenDashboard() {
                 havenState === 'ERROR' ? 'Check your connection' :
                 'Searching area...'
               }
-              icon={<Activity className="w-[18px] h-[18px] text-brand-orange" />} 
+              icon={<Activity className="w-[18px] h-[18px] text-[#F59E0B]" />}
+              iconBg={isDarkMode ? 'bg-[rgba(245,158,11,0.1)] border-[rgba(245,158,11,0.2)]' : 'bg-[#FFFBEB] border-[#FDE68A]'}
               trend="Map Data"
-              glow="rgba(249,115,22,0.15)"
+              trendColor={isDarkMode ? 'bg-[rgba(249,115,22,0.1)] border-[rgba(249,115,22,0.2)] text-[#f97316]' : 'bg-[#FFFBEB] border-[#FDE68A] text-[#F59E0B]'}
               loading={havenState === 'LOADING' || gpsState === 'LOADING'}
               actionIcon={havenState === 'FOUND' && nearestHaven && <Navigation className="w-3 h-3" />}
               onAction={handleNavigateToHaven}
             />
             <KpiCard 
+              isDarkMode={isDarkMode}
+              surface={surface} textPrimary={textPrimary} textSecondary={textSecondary}
               title="Police Jurisdiction" 
               value={jurisdiction ? jurisdiction.station_name : 'No data'}
               subtitle={jurisdiction ? `Division: ${jurisdiction.division || 'N/A'}` : 'Data unavailable for this region'}
-              icon={<ShieldCheck className="w-[18px] h-[18px] text-brand-blue" />} 
+              icon={<ShieldCheck className="w-[18px] h-[18px] text-[#2563EB]" />}
+              iconBg={isDarkMode ? 'bg-[rgba(37,99,235,0.1)] border-[rgba(37,99,235,0.2)]' : 'bg-[#EFF6FF] border-[#DBEAFE]'}
               trend="Official Data"
-              glow="rgba(59,130,246,0.15)"
+              trendColor={isDarkMode ? 'bg-[rgba(37,99,235,0.1)] border-[rgba(37,99,235,0.2)] text-[#3b82f6]' : 'bg-[#EFF6FF] border-[#DBEAFE] text-[#2563EB]'}
               loading={jurisdictionLoading || gpsState === 'LOADING'}
             />
           </div>
 
           {/* Live Safety Map */}
-          <div className="glass-panel relative overflow-hidden group min-h-[500px] lg:min-h-[700px] h-[60dvh] lg:h-[700px] w-full flex flex-col shadow-2xl ring-1 ring-white/5">
+          <div className={`rounded-[16px] relative overflow-hidden group min-h-[500px] lg:min-h-[700px] h-[60dvh] lg:h-[700px] w-full flex flex-col ${isDarkMode ? 'shadow-2xl ring-1 ring-white/5' : 'shadow-[0_4px_24px_rgba(0,0,0,0.1)] border border-[#E2E6EC]'}`}>
+            {/* Map Control Bar */}
             <div className="absolute top-4 left-4 right-4 z-10 flex justify-between items-start pointer-events-none">
-              <div className="glass-panel px-3 lg:px-4 py-2 flex flex-wrap lg:flex-nowrap items-center gap-2 lg:gap-3 pointer-events-auto bg-black/40 backdrop-blur-md">
+              <div className={`px-3 lg:px-4 py-2 flex flex-wrap lg:flex-nowrap items-center gap-2 lg:gap-3 pointer-events-auto rounded-[14px] backdrop-blur-md
+                ${isDarkMode 
+                  ? 'bg-[rgba(8,12,18,0.75)] border border-[rgba(255,255,255,0.08)]' 
+                  : 'bg-white/90 border border-[#E2E6EC] shadow-[0_2px_12px_rgba(0,0,0,0.08)]'
+                }`}
+              >
                 <div className="flex items-center gap-2">
-                  <Radio className={`w-4 h-4 ${loading ? 'text-yellow-400 animate-pulse' : 'text-brand-neonGreen'}`} />
-                  <span className="text-[11px] lg:text-[13px] font-bold font-display tracking-wide text-white">
+                  <Radio className={`w-4 h-4 ${loading ? 'text-yellow-500 animate-pulse' : (isDarkMode ? 'text-[#22c55e]' : 'text-[#16A34A]')}`} />
+                  <span className={`text-[11px] lg:text-[13px] font-bold font-display tracking-wide ${isDarkMode ? 'text-white' : 'text-[#111827]'}`}>
                     {loading ? 'Acquiring Signal...' : 'Live Safety Map'}
                   </span>
                 </div>
-                <div className="hidden lg:block w-px h-4 bg-white/20 mx-1"></div>
+                <div className={`hidden lg:block w-px h-4 ${isDarkMode ? 'bg-[rgba(255,255,255,0.15)]' : 'bg-[#E2E6EC]'} mx-1`} />
                 <div className="flex gap-1.5 overflow-x-auto custom-scrollbar pb-1 lg:pb-0">
-                  <MapToggle active={showCommunity} onClick={() => setShowCommunity(!showCommunity)} label="Hazards" />
-                  <MapToggle active={showJurisdictions} onClick={() => setShowJurisdictions(!showJurisdictions)} label="Police Zones" />
-                  <MapToggle active={showTraffic} onClick={() => setShowTraffic(!showTraffic)} label="Traffic" />
+                  <MapToggle isDarkMode={isDarkMode} active={showCommunity} onClick={() => setShowCommunity(!showCommunity)} label="Hazards" />
+                  <MapToggle isDarkMode={isDarkMode} active={showJurisdictions} onClick={() => setShowJurisdictions(!showJurisdictions)} label="Police Zones" />
+                  <MapToggle isDarkMode={isDarkMode} active={showTraffic} onClick={() => setShowTraffic(!showTraffic)} label="Traffic" />
                 </div>
               </div>
-
             </div>
             
-            <div className="absolute inset-0 z-0 bg-gray-900/80 flex items-center justify-center">
+            <div className="absolute inset-0 z-0">
               {errorMsg ? (
-                 <div className="text-red-400 font-mono text-[13px] bg-red-500/10 px-4 py-2 rounded-lg border border-red-500/20">{errorMsg}</div>
+                <div className="w-full h-full flex items-center justify-center bg-red-50">
+                  <div className="text-[#DC2626] font-mono text-[13px] bg-[rgba(220,38,38,0.06)] px-4 py-2 rounded-lg border border-[rgba(220,38,38,0.2)]">{errorMsg}</div>
+                </div>
               ) : (
-                 <UserView 
-                   onAddReport={handleAddReport} 
-                   userReports={reports} 
-                   isDashboard={true} 
-                   liveLocation={liveLocation}
-                   showTraffic={showTraffic}
-                   showCommunity={showCommunity}
-                   showStreetlights={showStreetlights}
-                   showJurisdictions={showJurisdictions}
-                   communityReports={nearbyAlerts}
-                 />
+                <UserView 
+                  onAddReport={handleAddReport} 
+                  userReports={reports} 
+                  isDashboard={true} 
+                  liveLocation={liveLocation}
+                  showTraffic={showTraffic}
+                  showCommunity={showCommunity}
+                  showStreetlights={showStreetlights}
+                  showJurisdictions={showJurisdictions}
+                  communityReports={nearbyAlerts}
+                />
               )}
             </div>
             
             <Link 
               to="/dashboard/navigation"
-              className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 glass-panel px-6 py-2.5 flex items-center gap-2 hover:bg-white/10 transition-all text-[13px] font-semibold text-white group shadow-xl bg-black/50"
+              className={`absolute bottom-6 left-1/2 -translate-x-1/2 z-10 px-6 py-2.5 flex items-center gap-2 transition-all text-[13px] font-semibold rounded-[14px] backdrop-blur-md group shadow-lg
+                ${isDarkMode 
+                  ? 'bg-[rgba(8,12,18,0.75)] border border-[rgba(255,255,255,0.1)] text-white hover:bg-[rgba(8,12,18,0.9)]'
+                  : 'bg-white/90 border border-[#E2E6EC] text-[#111827] hover:bg-white shadow-[0_4px_16px_rgba(0,0,0,0.1)]'
+                }`}
             >
-              <Map className="w-4 h-4 text-brand-blue group-hover:scale-110 transition-transform" />
+              <Map className={`w-4 h-4 group-hover:scale-110 transition-transform ${isDarkMode ? 'text-[#3b82f6]' : 'text-[#2563EB]'}`} />
               Open Full Navigation
             </Link>
           </div>
 
           {/* Quick Actions */}
           <div>
-            <h3 className="text-xl lg:text-2xl font-bold font-display mb-4 lg:mb-6 flex items-center gap-3 text-white">
-              <Zap className="w-5 h-5 lg:w-6 lg:h-6 text-brand-orange" />
+            <h3 className={`text-xl lg:text-2xl font-bold font-display mb-4 lg:mb-6 flex items-center gap-3 ${textPrimary}`}>
+              <Zap className={`w-5 h-5 lg:w-6 lg:h-6 ${isDarkMode ? 'text-brand-orange' : 'text-[#F59E0B]'}`} />
               Quick Actions
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <ActionCard title="Start Safe Navigation" icon={<Navigation2 />} to="/dashboard/navigation" color="blue" />
-              <ActionCard title="AI Route Analysis" icon={<Bot />} to="/dashboard/ai" color="purple" />
-              <ActionCard title="Report Hazard" icon={<AlertTriangle />} to="/dashboard/report" color="red" />
-              <ActionCard title="Live Tracking" icon={<Activity />} to="/dashboard/tracking" color="green" />
+              <ActionCard isDarkMode={isDarkMode} title="Start Safe Navigation" icon={<Navigation2 />} to="/dashboard/navigation" color="blue" />
+              <ActionCard isDarkMode={isDarkMode} title="AI Route Analysis" icon={<Bot />} to="/dashboard/ai" color="purple" />
+              <ActionCard isDarkMode={isDarkMode} title="Report Hazard" icon={<AlertTriangle />} to="/dashboard/report" color="red" />
+              <ActionCard isDarkMode={isDarkMode} title="Live Tracking" icon={<Activity />} to="/dashboard/tracking" color="green" />
             </div>
           </div>
-
         </div>
 
-        {/* ── RightSidebar ── */}
+        {/* ── Right Sidebar ── */}
         <div className="flex flex-col gap-6 xl:sticky xl:top-6 w-full xl:w-[380px] xl:min-w-[340px] xl:max-w-[420px]">
           
-          {/* Card 1: Live Safety Rating */}
-          <div className="glass-panel p-6 relative overflow-hidden flex flex-col gap-4 shadow-xl border-t-[3px] border-t-brand-neonGreen">
-            <div className="absolute -right-16 -top-16 w-48 h-48 bg-brand-neonGreen/10 blur-[50px] rounded-full pointer-events-none"></div>
+          {/* Card 1: Overall Safety Rating */}
+          <div className={`rounded-[16px] p-6 relative overflow-hidden flex flex-col gap-4 border-t-[3px] border-t-[#16A34A]
+            ${isDarkMode 
+              ? 'bg-[rgba(8,12,18,0.84)] border border-[rgba(255,255,255,0.07)] shadow-xl' 
+              : 'bg-white border border-[#E2E6EC] shadow-[0_4px_20px_rgba(0,0,0,0.07)]'
+            }`}
+          >
+            <div className={`absolute -right-16 -top-16 w-48 h-48 rounded-full pointer-events-none blur-[50px] ${isDarkMode ? 'bg-[rgba(34,197,94,0.08)]' : 'bg-[rgba(22,163,74,0.04)]'}`} />
             
-            <h3 className="text-[12px] font-mono text-gray-400 flex justify-between items-center uppercase tracking-widest">
+            <h3 className={`text-[12px] font-mono flex justify-between items-center uppercase tracking-widest ${textMuted}`}>
               OVERALL SAFETY RATING
-              <span className={`w-2 h-2 rounded-full ${loading ? 'bg-yellow-400' : 'bg-brand-neonGreen'} animate-pulse`}></span>
+              <span className={`w-2 h-2 rounded-full animate-pulse ${loading ? 'bg-yellow-400' : (isDarkMode ? 'bg-[#22c55e]' : 'bg-[#16A34A]')}`} />
             </h3>
             
             {loading ? (
-               <Skeleton className="w-full h-32 rounded-full" />
+              <div className={`w-full h-32 rounded-xl animate-pulse ${isDarkMode ? 'bg-[rgba(255,255,255,0.05)]' : 'bg-[#F1F3F6]'}`} />
             ) : (
-               <div className="flex flex-col items-center justify-center my-2">
-                 <div className="relative w-32 h-32 flex items-center justify-center">
-                   <svg className="w-full h-full transform -rotate-90">
-                     <circle cx="64" cy="64" r="56" stroke="rgba(255,255,255,0.05)" strokeWidth="8" fill="none" />
-                     <motion.circle 
-                       cx="64" cy="64" r="56" 
-                       stroke="currentColor" 
-                       strokeWidth="8" 
-                       fill="none" 
-                       strokeDasharray="351" 
-                       initial={{ strokeDashoffset: 351 }}
-                       animate={{ strokeDashoffset: 351 - (351 * (safetyMetrics?.score || 0)) / 100 }}
-                       transition={{ duration: 1.5, ease: "easeOut" }}
-                       className="text-brand-neonGreen"
-                     />
-                   </svg>
-                   <div className="absolute flex flex-col items-center justify-center">
-                     <span className="text-4xl font-display font-bold text-white leading-none">
-                       {Math.round((safetyMetrics?.score || 0) / 10)}<span className="text-lg text-gray-500">.{(safetyMetrics?.score || 0) % 10}</span>
-                     </span>
-                   </div>
-                 </div>
-               </div>
+              <div className="flex flex-col items-center justify-center my-2">
+                <div className="relative w-32 h-32 flex items-center justify-center">
+                  <svg className="w-full h-full transform -rotate-90">
+                    <circle cx="64" cy="64" r="56" stroke={isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.07)'} strokeWidth="8" fill="none" />
+                    <motion.circle 
+                      cx="64" cy="64" r="56" 
+                      stroke={isDarkMode ? '#22c55e' : '#16A34A'}
+                      strokeWidth="8" 
+                      fill="none" 
+                      strokeDasharray="351" 
+                      initial={{ strokeDashoffset: 351 }}
+                      animate={{ strokeDashoffset: 351 - (351 * (safetyMetrics?.score || 0)) / 100 }}
+                      transition={{ duration: 1.5, ease: "easeOut" }}
+                    />
+                  </svg>
+                  <div className="absolute flex flex-col items-center justify-center">
+                    <span className={`text-4xl font-display font-bold leading-none ${textPrimary}`}>
+                      {safetyMetrics?.score !== null ? Math.floor((safetyMetrics?.score || 0) / 10) : '-'}
+                      <span className={`text-lg ${textMuted}`}>.{safetyMetrics?.score !== null ? (safetyMetrics?.score || 0) % 10 : '-'}</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
             )}
 
             <div className="space-y-2 mt-2">
-              <SafetyMetric label="Environment" value={safetyMetrics && safetyMetrics.breakdown.emergency !== null ? `${Math.round(safetyMetrics.breakdown.emergency)}/100` : 'Insufficient data'} color={safetyMetrics && safetyMetrics.breakdown.emergency !== null ? "text-brand-neonGreen" : "text-gray-500"} />
-              <SafetyMetric label="Lighting" value={safetyMetrics && safetyMetrics.breakdown.lighting !== null ? `${Math.round(safetyMetrics.breakdown.lighting)}/100` : 'Insufficient data'} color={safetyMetrics && safetyMetrics.breakdown.lighting !== null ? "text-brand-blue" : "text-gray-500"} />
-              <SafetyMetric label="Community Alerts" value={nearbyAlerts.length} color="text-brand-orange" />
-              <SafetyMetric label="Weather" value={weatherData ? 'Clear' : 'N/A'} color="text-brand-blue" />
-              <SafetyMetric label="Confidence" value={safetyMetrics ? `${safetyMetrics.confidence}%` : 'N/A'} color="text-yellow-400" />
-              <SafetyMetric label="Last Updated" value="Just now" color="text-gray-400" />
+              <SafetyMetric isDarkMode={isDarkMode} label="Environment" value={safetyMetrics?.breakdown?.emergency !== null && safetyMetrics?.breakdown?.emergency !== undefined ? `${Math.round(safetyMetrics?.breakdown.emergency)}/100` : 'Insufficient data'} valueColor={isDarkMode ? 'text-[#22c55e]' : 'text-[#16A34A]'} noData={!safetyMetrics?.breakdown || safetyMetrics?.breakdown.emergency === null} />
+              <SafetyMetric isDarkMode={isDarkMode} label="Lighting" value={safetyMetrics?.breakdown?.lighting !== null && safetyMetrics?.breakdown?.lighting !== undefined ? `${Math.round(safetyMetrics?.breakdown.lighting)}/100` : 'Insufficient data'} valueColor={isDarkMode ? 'text-[#3b82f6]' : 'text-[#2563EB]'} noData={!safetyMetrics?.breakdown || safetyMetrics?.breakdown.lighting === null} />
+              <SafetyMetric isDarkMode={isDarkMode} label="Community Alerts" value={nearbyAlerts.length} valueColor={isDarkMode ? 'text-[#f97316]' : 'text-[#F59E0B]'} />
+              <SafetyMetric isDarkMode={isDarkMode} label="Weather" value={weatherData ? 'Clear' : 'N/A'} valueColor={isDarkMode ? 'text-[#3b82f6]' : 'text-[#2563EB]'} />
+              <SafetyMetric isDarkMode={isDarkMode} label="Confidence" value={safetyMetrics?.confidence ? `${safetyMetrics.confidence}%` : 'N/A'} valueColor={isDarkMode ? 'text-yellow-400' : 'text-[#F59E0B]'} />
+              <SafetyMetric isDarkMode={isDarkMode} label="Last Updated" value="Just now" valueColor={textMuted} />
             </div>
           </div>
 
           {/* Card 2: Nearby Alerts */}
-          <div className="glass-panel p-6 flex flex-col gap-4 shadow-xl">
-            <h3 className="text-[13px] font-mono text-gray-400 flex items-center gap-2 uppercase tracking-widest">
-              <AlertTriangle className="w-3.5 h-3.5 text-brand-orange" />
+          <div className={`rounded-[16px] p-6 flex flex-col gap-4
+            ${isDarkMode 
+              ? 'bg-[rgba(8,12,18,0.84)] border border-[rgba(255,255,255,0.07)] shadow-xl' 
+              : 'bg-white border border-[#E2E6EC] shadow-[0_4px_20px_rgba(0,0,0,0.07)]'
+            }`}
+          >
+            <h3 className={`text-[13px] font-mono flex items-center gap-2 uppercase tracking-widest ${textMuted}`}>
+              <AlertTriangle className={`w-3.5 h-3.5 ${isDarkMode ? 'text-[#f97316]' : 'text-[#F59E0B]'}`} />
               NEARBY ALERTS
             </h3>
             
             <div className="flex flex-col gap-3">
               {loading ? (
-                [1, 2, 3].map(i => <Skeleton key={i} className="h-14 w-full" />)
+                [1, 2, 3].map(i => (
+                  <div key={i} className={`h-14 w-full rounded-xl animate-pulse ${isDarkMode ? 'bg-[rgba(255,255,255,0.05)]' : 'bg-[#F1F3F6]'}`} />
+                ))
               ) : nearbyAlerts.length > 0 ? (
                 nearbyAlerts.map(alert => (
-                  <div key={alert.id} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors cursor-pointer group">
-                     <div>
-                       <h4 className="text-[13px] font-semibold text-white group-hover:text-brand-orange transition-colors capitalize">{alert.category || 'Hazard'}</h4>
-                       <p className="text-[11px] text-gray-400 mt-0.5 capitalize">{alert.severity} • {new Date(alert.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} • Near you</p>
-                     </div>
-                     <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-white transition-colors" />
+                  <div key={alert.id} className={`flex items-center justify-between p-3 rounded-xl border transition-colors cursor-pointer group
+                    ${isDarkMode 
+                      ? 'bg-[rgba(255,255,255,0.04)] border-[rgba(255,255,255,0.06)] hover:bg-[rgba(255,255,255,0.08)]'
+                      : 'bg-[#F7F8FA] border-[#E2E6EC] hover:bg-[#F1F3F6]'
+                    }`}
+                  >
+                    <div>
+                      <h4 className={`text-[13px] font-semibold capitalize transition-colors ${isDarkMode ? 'text-white group-hover:text-[#f97316]' : 'text-[#111827] group-hover:text-[#F59E0B]'}`}>
+                        {alert.category || 'Hazard'}
+                      </h4>
+                      <p className={`text-[11px] mt-0.5 capitalize ${textSecondary}`}>
+                        {alert.severity} • {new Date(alert.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} • Near you
+                      </p>
+                    </div>
+                    <ChevronRight className={`w-4 h-4 transition-colors ${textMuted} group-hover:${textSecondary}`} />
                   </div>
                 ))
               ) : (
-                <div className="text-[13px] text-gray-400 py-4 text-center bg-white/5 rounded-xl border border-white/5">
+                <div className={`text-[13px] py-4 text-center rounded-xl border ${textSecondary}
+                  ${isDarkMode 
+                    ? 'bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.05)]' 
+                    : 'bg-[#F7F8FA] border-[#E2E6EC]'
+                  }`}
+                >
                   No active alerts within 5km.
                 </div>
               )}
@@ -471,10 +477,15 @@ export default function CitizenDashboard() {
           </div>
 
           {/* Card 3: AI Safety Insights */}
-          <div className="glass-panel p-6 flex-1 flex flex-col gap-4 shadow-xl border border-brand-purple/20 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 blur-[40px] rounded-full pointer-events-none"></div>
+          <div className={`rounded-[16px] p-6 flex-1 flex flex-col gap-4 relative overflow-hidden border
+            ${isDarkMode 
+              ? 'bg-[rgba(8,12,18,0.84)] border-[rgba(124,58,237,0.2)] shadow-xl' 
+              : 'bg-white border-[#EDE9FE] shadow-[0_4px_20px_rgba(0,0,0,0.07)]'
+            }`}
+          >
+            <div className={`absolute top-0 right-0 w-32 h-32 rounded-full pointer-events-none blur-[40px] ${isDarkMode ? 'bg-[rgba(168,85,247,0.08)]' : 'bg-[rgba(124,58,237,0.04)]'}`} />
             
-            <h3 className="text-[13px] font-mono text-[#a855f7] flex items-center gap-2 uppercase tracking-widest z-10">
+            <h3 className={`text-[13px] font-mono flex items-center gap-2 uppercase tracking-widest z-10 ${isDarkMode ? 'text-[#a855f7]' : 'text-[#7C3AED]'}`}>
               <Bot className="w-4 h-4" />
               AI INSIGHTS
             </h3>
@@ -482,25 +493,34 @@ export default function CitizenDashboard() {
             <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-2 z-10">
               {loading ? (
                 <div className="flex flex-col gap-3">
-                  <Skeleton className="h-20 w-full" />
-                  <Skeleton className="h-20 w-full" />
+                  {[1,2].map(i => (
+                    <div key={i} className={`h-20 w-full rounded-xl animate-pulse ${isDarkMode ? 'bg-[rgba(255,255,255,0.05)]' : 'bg-[#F5F3FF]'}`} />
+                  ))}
                 </div>
               ) : safetyMetrics && safetyMetrics.explanation ? (
                 Object.values(safetyMetrics.explanation).filter(v=>v).slice(0, 4).map((insight, idx) => (
-                  <div key={idx} className="bg-[#a855f7]/10 p-3.5 rounded-xl border border-[#a855f7]/20 text-[13px] text-gray-200 leading-relaxed shadow-sm">
+                  <div key={idx} className={`p-3.5 rounded-xl border text-[13px] leading-relaxed shadow-sm
+                    ${isDarkMode 
+                      ? 'bg-[rgba(124,58,237,0.08)] border-[rgba(124,58,237,0.18)] text-gray-200' 
+                      : 'bg-[#F5F3FF] border-[#DDD6FE] text-[#374151]'
+                    }`}
+                  >
                     {insight}
                   </div>
                 ))
               ) : (
-                <div className="text-[13px] text-gray-400 py-4 text-center bg-white/5 rounded-xl border border-white/5">
+                <div className={`text-[13px] py-4 text-center rounded-xl border ${textSecondary}
+                  ${isDarkMode 
+                    ? 'bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.05)]' 
+                    : 'bg-[#F7F8FA] border-[#E2E6EC]'
+                  }`}
+                >
                   Waiting for sufficient data to generate AI insights.
                 </div>
               )}
             </div>
           </div>
-
         </div>
-
       </div>
     </motion.div>
   );
@@ -508,54 +528,51 @@ export default function CitizenDashboard() {
 
 // ─── Subcomponents ────────────
 
-function KpiCard({ title, value, subtitle, icon, trend, glow, loading, isScore, scoreValue, actionIcon, onAction }) {
-    return (
-    <div className="glass-panel p-6 hover-lift flex flex-col gap-3 h-full min-h-[160px] relative group overflow-hidden justify-between">
-      <div 
-        className="absolute -right-8 -top-8 w-32 h-32 rounded-full blur-[40px] opacity-30 group-hover:opacity-50 transition-opacity"
-        style={{ backgroundColor: glow }}
-      ></div>
-      
+function KpiCard({ isDarkMode, surface, textPrimary, textSecondary, title, value, subtitle, icon, iconBg, trend, trendColor, loading, isScore, scoreValue, actionIcon, onAction }) {
+  return (
+    <div className={`rounded-[16px] p-6 flex flex-col gap-3 h-full min-h-[160px] relative group overflow-hidden justify-between hover-lift transition-all
+      ${isDarkMode 
+        ? 'bg-[rgba(8,12,18,0.84)] border border-[rgba(255,255,255,0.07)] shadow-[0_4px_20px_rgba(0,0,0,0.4)]' 
+        : 'bg-white border border-[#E2E6EC] shadow-[0_2px_12px_rgba(0,0,0,0.06)]'
+      }`}
+    >
       <div className="z-10 flex flex-col gap-2">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-white/5 rounded-[12px] border border-white/10 shadow-inner backdrop-blur-md shrink-0">
+          <div className={`p-2.5 rounded-[12px] border shrink-0 ${iconBg}`}>
             {icon}
           </div>
-          <h4 className="text-[13px] text-gray-300 font-medium tracking-wide capitalize leading-tight">{title}</h4>
+          <h4 className={`text-[13px] font-medium tracking-wide capitalize leading-tight ${isDarkMode ? 'text-gray-300' : 'text-[#667085]'}`}>{title}</h4>
         </div>
         
         {loading ? (
-           <Skeleton className="h-8 w-24 mt-2" />
+          <div className={`h-8 w-24 mt-2 rounded-lg animate-pulse ${isDarkMode ? 'bg-[rgba(255,255,255,0.07)]' : 'bg-[#F1F3F6]'}`} />
         ) : (
-           <div className="flex items-center gap-3 mt-1">
-             {isScore && (
-               <div className="relative w-8 h-8 shrink-0">
-                 <svg className="w-full h-full transform -rotate-90">
-                   <circle cx="16" cy="16" r="14" stroke="rgba(255,255,255,0.1)" strokeWidth="3" fill="none" />
-                   <circle cx="16" cy="16" r="14" stroke="#22c55e" strokeWidth="3" fill="none" strokeDasharray="88" strokeDashoffset={88 - (88 * scoreValue) / 100} />
-                 </svg>
-               </div>
-             )}
-             <div 
-               title={value}
-               className="text-[20px] font-display font-bold text-white tracking-tight leading-tight line-clamp-2"
-             >
-               {value}
-             </div>
-           </div>
+          <div className="flex items-center gap-3 mt-1">
+            {isScore && (
+              <div className="relative w-8 h-8 shrink-0">
+                <svg className="w-full h-full transform -rotate-90">
+                  <circle cx="16" cy="16" r="14" stroke={isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'} strokeWidth="3" fill="none" />
+                  <circle cx="16" cy="16" r="14" stroke={isDarkMode ? '#22c55e' : '#16A34A'} strokeWidth="3" fill="none" strokeDasharray="88" strokeDashoffset={88 - (88 * scoreValue) / 100} />
+                </svg>
+              </div>
+            )}
+            <div title={value} className={`text-[20px] font-display font-bold tracking-tight leading-tight line-clamp-2 ${isDarkMode ? 'text-white' : 'text-[#111827]'}`}>
+              {value}
+            </div>
+          </div>
         )}
-        <div className="text-[12px] text-gray-400 whitespace-normal line-clamp-2">{subtitle}</div>
+        <div className={`text-[12px] whitespace-normal line-clamp-2 ${isDarkMode ? 'text-gray-400' : 'text-[#667085]'}`}>{subtitle}</div>
       </div>
 
       <div className="flex justify-between items-end z-10">
-        <div className="flex items-center gap-2">
-           <span className="text-[10px] font-mono text-brand-blue bg-brand-blue/10 px-2 py-1 rounded-[6px] border border-brand-blue/20 tracking-wider uppercase flex items-center gap-1.5">
-             <span className="w-1.5 h-1.5 rounded-full bg-brand-blue animate-pulse"></span>
-             {trend}
-           </span>
+        <div>
+          <span className={`text-[10px] font-mono px-2 py-1 rounded-[6px] border tracking-wider uppercase flex items-center gap-1.5 ${trendColor}`}>
+            <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+            {trend}
+          </span>
         </div>
         {actionIcon && (
-          <button onClick={onAction} className="p-2 bg-white/5 hover:bg-white/10 rounded-[12px] transition-colors text-gray-400 hover:text-white border border-white/5">
+          <button onClick={onAction} className={`p-2 rounded-[12px] transition-colors border ${isDarkMode ? 'bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] border-[rgba(255,255,255,0.07)] text-gray-400 hover:text-white' : 'bg-[#F7F8FA] hover:bg-[#F1F3F6] border-[#E2E6EC] text-[#667085] hover:text-[#111827]'}`}>
             {actionIcon}
           </button>
         )}
@@ -564,60 +581,55 @@ function KpiCard({ title, value, subtitle, icon, trend, glow, loading, isScore, 
   );
 }
 
-function ActionCard({ title, icon, to, color }) {
+function ActionCard({ isDarkMode, title, icon, to, color }) {
   const colorMap = {
-    blue: 'from-brand-blue/10 to-brand-blue/5 text-brand-blue border-brand-blue/20 hover:border-brand-blue/40 hover:shadow-[0_0_20px_rgba(59,130,246,0.15)]',
-    purple: 'from-purple-500/10 to-purple-600/5 text-purple-400 border-purple-500/20 hover:border-purple-500/40 hover:shadow-[0_0_20px_rgba(168,85,247,0.15)]',
-    red: 'from-brand-neonRed/10 to-brand-neonRed/5 text-brand-neonRed border-brand-neonRed/20 hover:border-brand-neonRed/40 hover:shadow-[0_0_20px_rgba(239,68,68,0.15)]',
-    green: 'from-brand-neonGreen/10 to-emerald-600/5 text-brand-neonGreen border-brand-neonGreen/20 hover:border-brand-neonGreen/40 hover:shadow-[0_0_20px_rgba(34,197,94,0.15)]',
+    blue: isDarkMode
+      ? 'from-[rgba(37,99,235,0.1)] to-[rgba(37,99,235,0.05)] text-[#3b82f6] border-[rgba(37,99,235,0.2)] hover:border-[rgba(37,99,235,0.4)]'
+      : 'from-[#EFF6FF] to-[#DBEAFE] text-[#2563EB] border-[#BFDBFE] hover:border-[#93C5FD] hover:shadow-[0_4px_16px_rgba(37,99,235,0.12)]',
+    purple: isDarkMode
+      ? 'from-[rgba(124,58,237,0.1)] to-[rgba(124,58,237,0.05)] text-[#a855f7] border-[rgba(124,58,237,0.2)] hover:border-[rgba(124,58,237,0.4)]'
+      : 'from-[#F5F3FF] to-[#EDE9FE] text-[#7C3AED] border-[#DDD6FE] hover:border-[#C4B5FD] hover:shadow-[0_4px_16px_rgba(124,58,237,0.12)]',
+    red: isDarkMode
+      ? 'from-[rgba(220,38,38,0.1)] to-[rgba(220,38,38,0.05)] text-[#ef4444] border-[rgba(220,38,38,0.2)] hover:border-[rgba(220,38,38,0.4)]'
+      : 'from-[#FFF1F2] to-[#FFE4E6] text-[#DC2626] border-[#FECACA] hover:border-[#FCA5A5] hover:shadow-[0_4px_16px_rgba(220,38,38,0.12)]',
+    green: isDarkMode
+      ? 'from-[rgba(22,163,74,0.1)] to-[rgba(22,163,74,0.05)] text-[#22c55e] border-[rgba(22,163,74,0.2)] hover:border-[rgba(22,163,74,0.4)]'
+      : 'from-[#F0FDF4] to-[#DCFCE7] text-[#16A34A] border-[#BBF7D0] hover:border-[#86EFAC] hover:shadow-[0_4px_16px_rgba(22,163,74,0.12)]',
   };
 
   return (
     <Link 
       to={to}
-      className={`glass-panel p-6 flex flex-col items-center justify-center gap-4 text-center transition-all duration-300 hover-lift border ${colorMap[color]} bg-gradient-to-br h-36`}
+      className={`rounded-[16px] p-6 flex flex-col items-center justify-center gap-4 text-center transition-all duration-300 hover-lift border bg-gradient-to-br h-36 ${colorMap[color]}`}
     >
-      <div className="p-3 bg-white/5 rounded-2xl shadow-inner border border-white/5">
-        {React.cloneElement(icon, { className: "w-8 h-8 drop-shadow-md" })}
+      <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-[rgba(255,255,255,0.05)] border-[rgba(255,255,255,0.08)]' : 'bg-white/60 border-current/20'} shadow-sm`}>
+        {React.cloneElement(icon, { className: "w-8 h-8 drop-shadow-sm" })}
       </div>
-      <span className="text-[13px] font-semibold text-gray-200">{title}</span>
+      <span className={`text-[13px] font-semibold ${isDarkMode ? 'text-gray-200' : 'text-current'}`}>{title}</span>
     </Link>
   );
 }
 
-function SafetyMetric({ label, value, color }) {
+function SafetyMetric({ isDarkMode, label, value, valueColor, noData }) {
   return (
-    <div className="flex justify-between items-center text-[13px] py-2 border-b border-white/5 last:border-0">
-      <span className="text-gray-400">{label}</span>
-      <span className={`font-semibold ${color}`}>{value}</span>
+    <div className={`flex justify-between items-center text-[13px] py-2 border-b last:border-0 ${isDarkMode ? 'border-[rgba(255,255,255,0.05)]' : 'border-[#F1F3F6]'}`}>
+      <span className={isDarkMode ? 'text-gray-400' : 'text-[#667085]'}>{label}</span>
+      <span className={`font-semibold ${noData ? (isDarkMode ? 'text-gray-500' : 'text-[#98A2B3]') : valueColor}`}>{value}</span>
     </div>
   );
 }
 
-function Skeleton({ className }) {
-  return (
-    <div className={`bg-white/5 animate-pulse rounded-xl ${className}`}></div>
-  );
-}
-
-function MapToggle({ active, onClick, label }) {
+function MapToggle({ isDarkMode, active, onClick, label }) {
   return (
     <button 
       onClick={onClick}
-      className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition-colors ${active ? 'bg-white/20 text-white' : 'bg-transparent text-gray-400 hover:text-white hover:bg-white/10'}`}
+      className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition-colors
+        ${active 
+          ? (isDarkMode ? 'bg-[rgba(255,255,255,0.18)] text-white' : 'bg-[#2563EB] text-white')
+          : (isDarkMode ? 'bg-transparent text-gray-400 hover:text-white hover:bg-[rgba(255,255,255,0.1)]' : 'bg-transparent text-[#667085] hover:text-[#111827] hover:bg-[rgba(0,0,0,0.06)]')
+        }`}
     >
       {label}
-    </button>
-  );
-}
-
-function MapBtn({ icon, onClick, loading }) {
-  return (
-    <button 
-      onClick={onClick}
-      className="w-10 h-10 glass-panel flex items-center justify-center hover:bg-white/10 transition-colors bg-black/40 backdrop-blur-md text-white"
-    >
-      {React.cloneElement(icon, { className: `w-5 h-5 ${loading ? 'animate-spin text-brand-blue' : ''}` })}
     </button>
   );
 }

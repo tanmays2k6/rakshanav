@@ -3,9 +3,11 @@ import { Bell, CheckCircle2, AlertTriangle, Info, Settings, Clock, ArrowRight } 
 import { notificationService } from '../../services/notificationService';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { useTheme } from '../../contexts/ThemeContext';
 
 export default function Notifications() {
   const { user } = useAuth();
+  const { isDarkMode } = useTheme();
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -82,12 +84,12 @@ export default function Notifications() {
     <div className="h-full flex flex-col gap-6 animate-fade-up max-w-3xl mx-auto w-full">
       <div className="flex justify-between items-center mb-2">
         <div>
-          <h2 className="text-2xl font-display font-bold text-white tracking-tight">Safety Alerts</h2>
-          <p className="text-sm text-gray-400 mt-1">Real-time updates from Government, Enterprise, and System.</p>
+          <h2 className={`text-2xl font-display font-bold tracking-tight ${isDarkMode ? 'text-white' : 'text-[#111827]'}`}>Safety Alerts</h2>
+          <p className={`text-sm mt-1 ${isDarkMode ? 'text-gray-400' : 'text-[#667085]'}`}>Real-time updates from Government, Enterprise, and System.</p>
         </div>
         <button 
           onClick={() => navigate('/dashboard/settings')}
-          className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+          className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] text-gray-400 hover:text-white' : 'bg-[#F1F3F6] hover:bg-[#E2E6EC] text-[#667085] hover:text-[#111827]'}`}
           title="Notification Preferences"
         >
           <Settings className="w-5 h-5" />
@@ -100,19 +102,24 @@ export default function Notifications() {
              <div className="w-6 h-6 rounded-full border-2 border-brand-blue border-t-transparent animate-spin"></div>
            </div>
         ) : notifications.length === 0 ? (
-          <div className="glass-panel p-10 flex flex-col items-center justify-center text-center">
-            <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4">
-              <Bell className="w-8 h-8 text-gray-500" />
+          <div className={`rounded-[16px] p-10 flex flex-col items-center justify-center text-center border
+            ${isDarkMode ? 'bg-[rgba(8,12,18,0.84)] border-[rgba(255,255,255,0.07)]' : 'bg-white border-[#E2E6EC]'}`}>
+            <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${isDarkMode ? 'bg-[rgba(255,255,255,0.05)]' : 'bg-[#F1F3F6]'}`}>
+              <Bell className={`w-8 h-8 ${isDarkMode ? 'text-gray-500' : 'text-[#98A2B3]'}`} />
             </div>
-            <h3 className="text-lg font-bold text-white mb-2">You're all caught up!</h3>
-            <p className="text-gray-400 text-sm max-w-sm">No new safety alerts or updates are available at this time.</p>
+            <h3 className={`text-lg font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-[#111827]'}`}>You're all caught up!</h3>
+            <p className={`text-sm max-w-sm ${isDarkMode ? 'text-gray-400' : 'text-[#667085]'}`}>No new safety alerts or updates are available at this time.</p>
           </div>
         ) : (
           notifications.map((notif) => (
             <div 
               key={notif.id} 
               onClick={() => handleNotificationClick(notif)}
-              className={`glass-panel p-5 flex gap-4 items-start group hover:border-white/20 transition-all cursor-pointer relative overflow-hidden ${notif.is_read ? 'opacity-70' : 'bg-[#0a111a]'}`}
+              className={`rounded-[16px] p-5 flex gap-4 items-start group transition-all cursor-pointer relative overflow-hidden border
+                ${isDarkMode 
+                  ? `bg-[rgba(8,12,18,0.84)] border-[rgba(255,255,255,0.07)] hover:border-[rgba(255,255,255,0.15)] ${notif.is_read ? 'opacity-70' : ''}`
+                  : `bg-white border-[#E2E6EC] hover:border-[#CBD5E0] hover:shadow-sm ${notif.is_read ? 'opacity-70' : ''}`
+                }`}
             >
               
               {notif.type === 'danger' && <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-neonRed"></div>}
@@ -125,19 +132,19 @@ export default function Notifications() {
               <div className="flex-1">
                 <div className="flex justify-between items-start mb-1">
                   <div className="flex items-center gap-2">
-                     <h3 className={`text-sm ${notif.is_read ? 'font-medium text-gray-300' : 'font-bold text-white'}`}>{notif.title}</h3>
-                     {!notif.is_read && <span className="w-2 h-2 rounded-full bg-brand-blue"></span>}
-                     {notif.priority === 'critical' && <span className="text-[10px] uppercase font-bold tracking-wider bg-red-500/20 text-red-400 px-2 py-0.5 rounded ml-2">Critical</span>}
+                     <h3 className={`text-sm ${notif.is_read ? `font-medium ${isDarkMode ? 'text-gray-300' : 'text-[#667085]'}` : `font-bold ${isDarkMode ? 'text-white' : 'text-[#111827]'}`}`}>{notif.title}</h3>
+                     {!notif.is_read && <span className="w-2 h-2 rounded-full bg-[#2563EB]"></span>}
+                     {notif.priority === 'critical' && <span className="text-[10px] uppercase font-bold tracking-wider bg-red-500/20 text-red-500 px-2 py-0.5 rounded ml-2">Critical</span>}
                   </div>
-                  <span className="text-xs font-mono text-gray-500 flex items-center gap-1">
+                  <span className={`text-xs font-mono flex items-center gap-1 ${isDarkMode ? 'text-gray-500' : 'text-[#98A2B3]'}`}>
                      <Clock className="w-3 h-3" />
                      {getRelativeTime(notif.created_at)}
                   </span>
                 </div>
-                <p className="text-sm text-gray-400 leading-relaxed mt-1">{notif.message}</p>
-                <div className="mt-3 flex items-center gap-4 text-xs font-mono text-gray-500 uppercase">
-                   <span className="bg-white/5 px-2 py-1 rounded">Source: {notif.sender_role}</span>
-                   <span className="flex items-center gap-1 group-hover:text-brand-blue transition-colors ml-auto">
+                <p className={`text-sm leading-relaxed mt-1 ${isDarkMode ? 'text-gray-400' : 'text-[#667085]'}`}>{notif.message}</p>
+                <div className={`mt-3 flex items-center gap-4 text-xs font-mono uppercase ${isDarkMode ? 'text-gray-500' : 'text-[#98A2B3]'}`}>
+                   <span className={`px-2 py-1 rounded ${isDarkMode ? 'bg-[rgba(255,255,255,0.05)]' : 'bg-[#F1F3F6]'}`}>Source: {notif.sender_role}</span>
+                   <span className={`flex items-center gap-1 ml-auto transition-colors ${isDarkMode ? 'group-hover:text-[#3b82f6]' : 'group-hover:text-[#2563EB]'}`}>
                      Action <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
                    </span>
                 </div>

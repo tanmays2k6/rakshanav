@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import { tripService } from '../../services/tripService';
 import { geminiService } from '../../services/geminiService';
 import { 
@@ -12,8 +13,9 @@ import L from 'leaflet';
 
 export default function TripHistory() {
   const { user } = useAuth();
+  const { isDarkMode } = useTheme();
+  const navigate = useNavigate();
   
-  // Data State
   const [trips, setTrips] = useState([]);
   const [stats, setStats] = useState(null);
   const [insights, setInsights] = useState([]);
@@ -25,10 +27,7 @@ export default function TripHistory() {
   const [sortOrder, setSortOrder] = useState('newest');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedTripId, setExpandedTripId] = useState(null);
-
   const [errorMsg, setErrorMsg] = useState('');
-
-  const navigate = useNavigate();
 
   useEffect(() => {
     if (!user) return;
@@ -100,29 +99,41 @@ export default function TripHistory() {
     return '#3b82f6'; // Blue
   };
 
+  const textPrimary = isDarkMode ? 'text-white' : 'text-[#111827]';
+  const textSecondary = isDarkMode ? 'text-gray-400' : 'text-[#667085]';
+  const textMuted = isDarkMode ? 'text-gray-500' : 'text-[#98A2B3]';
+  const borderColor = isDarkMode ? 'border-[rgba(255,255,255,0.08)]' : 'border-[#E2E6EC]';
+  const surfaceCard = isDarkMode 
+    ? 'bg-[rgba(8,12,18,0.84)] border border-[rgba(255,255,255,0.07)] shadow-xl'
+    : 'bg-white border border-[#E2E6EC] shadow-sm';
+
   if (!user) return null;
 
   return (
-    <div className="h-full flex flex-col gap-6 animate-fade-up">
+    <div className="h-full flex flex-col gap-6">
       
       {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-display font-bold text-white tracking-tight flex items-center gap-2">
-            <Navigation className="w-6 h-6 text-brand-blue" />
+          <h2 className={`text-2xl font-display font-bold tracking-tight flex items-center gap-2 ${textPrimary}`}>
+            <Navigation className="w-6 h-6 text-[#2563EB]" />
             Travel History & Intelligence
           </h2>
-          <p className="text-sm text-gray-400 mt-1">Review your past commutes, safety metrics, and AI travel insights.</p>
+          <p className={`text-sm mt-1 ${textSecondary}`}>Review your past commutes, safety metrics, and AI travel insights.</p>
         </div>
         
         <div className="flex items-center gap-2">
-           <button onClick={() => setViewMode('list')} className={`p-2 rounded-lg border ${viewMode === 'list' ? 'bg-brand-blue/20 border-brand-blue text-brand-blue' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'}`}>
+           <button onClick={() => setViewMode('list')} className={`p-2 rounded-lg border ${viewMode === 'list' 
+             ? (isDarkMode ? 'bg-[rgba(37,99,235,0.15)] border-[rgba(37,99,235,0.3)] text-[#3b82f6]' : 'bg-[#EFF6FF] border-[#DBEAFE] text-[#2563EB]') 
+             : (isDarkMode ? 'bg-[rgba(255,255,255,0.05)] border-[rgba(255,255,255,0.1)] text-gray-400 hover:bg-[rgba(255,255,255,0.1)]' : 'bg-white border-[#E2E6EC] text-[#667085] hover:bg-[#F1F3F6]')}`}>
               <List className="w-4 h-4" />
            </button>
-           <button onClick={() => setViewMode('map')} className={`p-2 rounded-lg border ${viewMode === 'map' ? 'bg-brand-blue/20 border-brand-blue text-brand-blue' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'}`}>
+           <button onClick={() => setViewMode('map')} className={`p-2 rounded-lg border ${viewMode === 'map' 
+             ? (isDarkMode ? 'bg-[rgba(37,99,235,0.15)] border-[rgba(37,99,235,0.3)] text-[#3b82f6]' : 'bg-[#EFF6FF] border-[#DBEAFE] text-[#2563EB]') 
+             : (isDarkMode ? 'bg-[rgba(255,255,255,0.05)] border-[rgba(255,255,255,0.1)] text-gray-400 hover:bg-[rgba(255,255,255,0.1)]' : 'bg-white border-[#E2E6EC] text-[#667085] hover:bg-[#F1F3F6]')}`}>
               <MapIcon className="w-4 h-4" />
            </button>
-           <button onClick={handleExportCSV} className="p-2 bg-white/5 border border-white/10 hover:bg-white/10 rounded-lg text-gray-300 transition-colors">
+           <button onClick={handleExportCSV} className={`p-2 rounded-lg border transition-colors ${isDarkMode ? 'bg-[rgba(255,255,255,0.05)] border-[rgba(255,255,255,0.1)] hover:bg-[rgba(255,255,255,0.1)] text-gray-300' : 'bg-white border-[#E2E6EC] hover:bg-[#F1F3F6] text-[#667085]'}`}>
              <Download className="w-4 h-4" />
            </button>
         </div>
@@ -154,38 +165,39 @@ export default function TripHistory() {
       )}
 
       {/* TOOLBAR */}
-      <div className="flex flex-wrap items-center gap-3 bg-white/5 border border-white/10 p-2 rounded-xl">
+      <div className={`flex flex-wrap items-center gap-3 border p-2 rounded-xl transition-colors
+        ${isDarkMode ? 'bg-[rgba(255,255,255,0.05)] border-[rgba(255,255,255,0.08)]' : 'bg-white border-[#E2E6EC]'}`}>
          <div className="flex-1 min-w-[200px] relative">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className={`w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 ${isDarkMode ? 'text-gray-400' : 'text-[#98A2B3]'}`} />
             <input 
               type="text" 
               placeholder="Search destinations or origins..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-transparent border-none text-sm text-white pl-9 pr-4 py-2 outline-none"
+              className={`w-full border-none text-sm pl-9 pr-4 py-2 outline-none bg-transparent ${isDarkMode ? 'text-white' : 'text-[#111827]'}`}
             />
          </div>
-         <div className="w-px h-6 bg-white/10"></div>
+         <div className={`w-px h-6 ${isDarkMode ? 'bg-[rgba(255,255,255,0.1)]' : 'bg-[#E2E6EC]'}`}></div>
          <select 
            value={timeFilter} 
            onChange={(e) => setTimeFilter(e.target.value)}
-           className="bg-transparent border-none text-sm text-gray-300 outline-none cursor-pointer"
+           className={`border-none text-sm outline-none cursor-pointer bg-transparent ${isDarkMode ? 'text-gray-300' : 'text-[#667085]'}`}
          >
-           <option value="all" className="bg-[#080c12]">All Time</option>
-           <option value="today" className="bg-[#080c12]">Today</option>
-           <option value="7days" className="bg-[#080c12]">Last 7 Days</option>
-           <option value="month" className="bg-[#080c12]">Last Month</option>
+           <option value="all" className={isDarkMode ? 'bg-[#080c12]' : 'bg-white'}>All Time</option>
+           <option value="today" className={isDarkMode ? 'bg-[#080c12]' : 'bg-white'}>Today</option>
+           <option value="7days" className={isDarkMode ? 'bg-[#080c12]' : 'bg-white'}>Last 7 Days</option>
+           <option value="month" className={isDarkMode ? 'bg-[#080c12]' : 'bg-white'}>Last Month</option>
          </select>
-         <div className="w-px h-6 bg-white/10"></div>
+         <div className={`w-px h-6 ${isDarkMode ? 'bg-[rgba(255,255,255,0.1)]' : 'bg-[#E2E6EC]'}`}></div>
          <select 
            value={sortOrder} 
            onChange={(e) => setSortOrder(e.target.value)}
-           className="bg-transparent border-none text-sm text-gray-300 outline-none cursor-pointer"
+           className={`border-none text-sm outline-none cursor-pointer bg-transparent ${isDarkMode ? 'text-gray-300' : 'text-[#667085]'}`}
          >
-           <option value="newest" className="bg-[#080c12]">Newest First</option>
-           <option value="oldest" className="bg-[#080c12]">Oldest First</option>
-           <option value="safest" className="bg-[#080c12]">Safest</option>
-           <option value="longest" className="bg-[#080c12]">Longest Distance</option>
+           <option value="newest" className={isDarkMode ? 'bg-[#080c12]' : 'bg-white'}>Newest First</option>
+           <option value="oldest" className={isDarkMode ? 'bg-[#080c12]' : 'bg-white'}>Oldest First</option>
+           <option value="safest" className={isDarkMode ? 'bg-[#080c12]' : 'bg-white'}>Safest</option>
+           <option value="longest" className={isDarkMode ? 'bg-[#080c12]' : 'bg-white'}>Longest Distance</option>
          </select>
       </div>
 
@@ -206,21 +218,25 @@ export default function TripHistory() {
           </div>
         ) : trips.length === 0 ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6">
-             <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4">
-                <Navigation className="w-8 h-8 text-gray-500" />
+             <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${isDarkMode ? 'bg-[rgba(255,255,255,0.05)]' : 'bg-[#F1F3F6]'}`}>
+                <Navigation className={`w-8 h-8 ${isDarkMode ? 'text-gray-500' : 'text-[#98A2B3]'}`} />
              </div>
-             <h3 className="text-xl font-bold text-white mb-2">No trips found</h3>
-             <p className="text-gray-400 text-sm max-w-sm mb-6">
+             <h3 className={`text-xl font-bold mb-2 ${textPrimary}`}>No trips found</h3>
+             <p className={`text-sm max-w-sm mb-6 ${textSecondary}`}>
                 You haven't completed any tracked journeys yet. Start navigating to build your safety profile.
              </p>
-             <button onClick={() => navigate('/dashboard/navigation')} className="bg-brand-blue hover:bg-blue-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold transition-colors shadow-lg shadow-brand-blue/20">
+             <button onClick={() => navigate('/dashboard/navigation')} className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white px-6 py-2.5 rounded-lg text-sm font-bold transition-colors shadow-lg">
                 Start Safe Navigation
              </button>
           </div>
         ) : viewMode === 'list' ? (
           <div className="space-y-4">
             {trips.map(trip => (
-               <div key={trip.id} className={`glass-panel overflow-hidden transition-all duration-300 ${expandedTripId === trip.id ? 'border-brand-blue/50 ring-1 ring-brand-blue/30' : 'hover:border-white/20'}`}>
+               <div key={trip.id} className={`rounded-[16px] border overflow-hidden transition-all duration-300
+                 ${isDarkMode 
+                   ? `bg-[rgba(8,12,18,0.84)] ${expandedTripId === trip.id ? 'border-[rgba(37,99,235,0.4)] ring-1 ring-[rgba(37,99,235,0.2)]' : 'border-[rgba(255,255,255,0.07)] hover:border-[rgba(255,255,255,0.15)]'}`
+                   : `bg-white ${expandedTripId === trip.id ? 'border-[#BFDBFE] ring-1 ring-[rgba(37,99,235,0.1)]' : 'border-[#E2E6EC] hover:border-[#CBD5E0] hover:shadow-sm'}`
+                 }`}>
                  
                  {/* Compact Header */}
                  <div onClick={() => setExpandedTripId(expandedTripId === trip.id ? null : trip.id)} className="p-5 flex flex-col md:flex-row md:items-center gap-4 cursor-pointer relative group">
@@ -228,42 +244,43 @@ export default function TripHistory() {
                     
                     <div className="flex-1 pl-2">
                        <div className="flex items-center gap-2 mb-1">
-                          <div className="w-2 h-2 rounded-full bg-brand-blue"></div>
-                          <p className="text-sm font-medium text-white truncate max-w-[200px] md:max-w-[300px]">{trip.origin_name.split(',')[0]}</p>
+                          <div className="w-2 h-2 rounded-full bg-[#2563EB]"></div>
+                          <p className={`text-sm font-medium truncate max-w-[200px] md:max-w-[300px] ${textPrimary}`}>{trip.origin_name.split(',')[0]}</p>
                        </div>
                        <div className="flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getRouteColor(trip.route_type) }}></div>
-                          <p className="text-sm font-medium text-white truncate max-w-[200px] md:max-w-[300px]">{trip.destination_name.split(',')[0]}</p>
+                          <p className={`text-sm font-medium truncate max-w-[200px] md:max-w-[300px] ${textPrimary}`}>{trip.destination_name.split(',')[0]}</p>
                        </div>
                     </div>
 
                     <div className="flex items-center gap-6 md:min-w-[350px]">
                        <div>
-                          <p className="text-[10px] text-gray-500 font-mono uppercase tracking-wider">Distance</p>
-                          <p className="text-sm text-white font-medium">{trip.distance_km} km</p>
+                          <p className={`text-[10px] font-mono uppercase tracking-wider ${textMuted}`}>Distance</p>
+                          <p className={`text-sm font-medium ${textPrimary}`}>{trip.distance_km} km</p>
                        </div>
                        <div>
-                          <p className="text-[10px] text-gray-500 font-mono uppercase tracking-wider">Duration</p>
-                          <p className="text-sm text-white font-medium">{trip.duration_minutes} min</p>
+                          <p className={`text-[10px] font-mono uppercase tracking-wider ${textMuted}`}>Duration</p>
+                          <p className={`text-sm font-medium ${textPrimary}`}>{trip.duration_minutes} min</p>
                        </div>
                        <div>
-                          <p className="text-[10px] text-gray-500 font-mono uppercase tracking-wider">Safety</p>
-                          <p className="text-sm text-brand-neonGreen font-bold">{trip.safety_score}/100</p>
+                          <p className={`text-[10px] font-mono uppercase tracking-wider ${textMuted}`}>Safety</p>
+                          <p className={`text-sm font-bold ${isDarkMode ? 'text-[#22c55e]' : 'text-[#16A34A]'}`}>{trip.safety_score}/100</p>
                        </div>
                     </div>
 
-                    <div className="text-right md:min-w-[120px] flex flex-col items-end gap-1">
-                       <p className="text-xs text-gray-400 font-mono">{new Date(trip.created_at).toLocaleDateString()}</p>
-                       <p className="text-[10px] text-gray-500 font-mono">{new Date(trip.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                    <div className={`text-right md:min-w-[120px] flex flex-col items-end gap-1`}>
+                       <p className={`text-xs font-mono ${textMuted}`}>{new Date(trip.created_at).toLocaleDateString()}</p>
+                       <p className={`text-[10px] font-mono ${textMuted}`}>{new Date(trip.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
                     </div>
                  </div>
 
                  {/* Expanded Details */}
                  {expandedTripId === trip.id && (
-                    <div className="border-t border-white/10 p-5 bg-black/20 grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in">
+                    <div className={`border-t p-5 grid grid-cols-1 md:grid-cols-2 gap-6
+                       ${isDarkMode ? 'border-[rgba(255,255,255,0.07)] bg-[rgba(0,0,0,0.2)]' : 'border-[#E2E6EC] bg-[#F7F8FA]'}`}>
                        
                        {/* Map */}
-                       <div className="h-[250px] rounded-xl overflow-hidden border border-white/10 relative z-0">
+                       <div className={`h-[250px] rounded-xl overflow-hidden border relative z-0 ${isDarkMode ? 'border-[rgba(255,255,255,0.08)]' : 'border-[#E2E6EC]'}`}>
                           {trip.route_geometry?.coordinates && (
                             <MapContainer 
                               bounds={L.polyline(trip.route_geometry.coordinates.map(c => [c[1], c[0]])).getBounds()}
@@ -283,32 +300,32 @@ export default function TripHistory() {
 
                        {/* Stats */}
                        <div className="flex flex-col gap-4">
-                          <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                             <ShieldCheck className="w-4 h-4 text-brand-neonGreen" />
+                          <h4 className={`text-sm font-bold flex items-center gap-2 ${textPrimary}`}>
+                             <ShieldCheck className={`w-4 h-4 ${isDarkMode ? 'text-[#22c55e]' : 'text-[#16A34A]'}`} />
                              Route Intelligence
                           </h4>
                           
                           <div className="grid grid-cols-2 gap-3">
-                             <div className="bg-white/5 p-3 rounded-lg border border-white/5">
-                                <p className="text-[10px] text-gray-400 font-mono mb-1">ROUTE TYPE</p>
+                             <div className={`p-3 rounded-lg border ${isDarkMode ? 'bg-[rgba(255,255,255,0.05)] border-[rgba(255,255,255,0.05)]' : 'bg-white border-[#E2E6EC]'}`}>
+                                <p className={`text-[10px] font-mono mb-1 ${textMuted}`}>ROUTE TYPE</p>
                                 <p className="text-xs font-bold uppercase" style={{ color: getRouteColor(trip.route_type) }}>{trip.route_type}</p>
                              </div>
-                             <div className="bg-white/5 p-3 rounded-lg border border-white/5">
-                                <p className="text-[10px] text-gray-400 font-mono mb-1">WEATHER</p>
-                                <p className="text-xs text-white">{trip.weather || 'Unknown'}</p>
+                             <div className={`p-3 rounded-lg border ${isDarkMode ? 'bg-[rgba(255,255,255,0.05)] border-[rgba(255,255,255,0.05)]' : 'bg-white border-[#E2E6EC]'}`}>
+                                <p className={`text-[10px] font-mono mb-1 ${textMuted}`}>WEATHER</p>
+                                <p className={`text-xs ${textPrimary}`}>{trip.weather || 'Unknown'}</p>
                              </div>
-                             <div className="bg-white/5 p-3 rounded-lg border border-white/5">
-                                <p className="text-[10px] text-gray-400 font-mono mb-1">LIGHTING</p>
-                                <p className="text-xs text-white">{trip.lighting_score || 'Unknown'}</p>
+                             <div className={`p-3 rounded-lg border ${isDarkMode ? 'bg-[rgba(255,255,255,0.05)] border-[rgba(255,255,255,0.05)]' : 'bg-white border-[#E2E6EC]'}`}>
+                                <p className={`text-[10px] font-mono mb-1 ${textMuted}`}>LIGHTING</p>
+                                <p className={`text-xs ${textPrimary}`}>{trip.lighting_score || 'Unknown'}</p>
                              </div>
-                             <div className="bg-white/5 p-3 rounded-lg border border-white/5">
-                                <p className="text-[10px] text-gray-400 font-mono mb-1">COMMERCIAL</p>
-                                <p className="text-xs text-white">{trip.commercial_count} Zones</p>
+                             <div className={`p-3 rounded-lg border ${isDarkMode ? 'bg-[rgba(255,255,255,0.05)] border-[rgba(255,255,255,0.05)]' : 'bg-white border-[#E2E6EC]'}`}>
+                                <p className={`text-[10px] font-mono mb-1 ${textMuted}`}>COMMERCIAL</p>
+                                <p className={`text-xs ${textPrimary}`}>{trip.commercial_count} Zones</p>
                              </div>
                           </div>
 
                           <div className="mt-auto">
-                             <p className="text-[10px] text-gray-400 font-mono mb-2">INFRASTRUCTURE ENCOUNTERED</p>
+                             <p className={`text-[10px] font-mono mb-2 ${textMuted}`}>INFRASTRUCTURE ENCOUNTERED</p>
                              <div className="flex gap-2">
                                <Pill label={`${trip.police_count} Police`} icon="👮" color="#3b82f6" />
                                <Pill label={`${trip.hospital_count} Hospitals`} icon="🏥" color="#ef4444" />
@@ -357,12 +374,17 @@ export default function TripHistory() {
 }
 
 // Subcomponents
-function StatCard({ title, value, suffix, textSmall, color = "text-white" }) {
+function StatCard({ title, value, suffix, textSmall, color = "" }) {
+  const { isDarkMode } = useTheme();
   return (
-    <div className="glass-panel p-4 flex flex-col justify-center">
-       <p className="text-[10px] text-gray-500 font-mono uppercase tracking-wider mb-1">{title}</p>
-       <p className={`font-bold ${textSmall ? 'text-sm truncate' : 'text-2xl'} ${color}`}>
-          {value} {suffix && <span className="text-xs text-gray-400 font-normal ml-0.5">{suffix}</span>}
+    <div className={`rounded-[16px] p-4 flex flex-col justify-center border
+      ${isDarkMode 
+        ? 'bg-[rgba(8,12,18,0.84)] border-[rgba(255,255,255,0.07)]'
+        : 'bg-white border-[#E2E6EC] shadow-sm'
+      }`}>
+       <p className={`text-[10px] font-mono uppercase tracking-wider mb-1 ${isDarkMode ? 'text-gray-500' : 'text-[#98A2B3]'}`}>{title}</p>
+       <p className={`font-bold ${textSmall ? 'text-sm truncate' : 'text-2xl'} ${color || (isDarkMode ? 'text-white' : 'text-[#111827]')}`}>
+          {value} {suffix && <span className={`text-xs font-normal ml-0.5 ${isDarkMode ? 'text-gray-400' : 'text-[#98A2B3]'}`}>{suffix}</span>}
        </p>
     </div>
   )
