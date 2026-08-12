@@ -1,6 +1,6 @@
 import { SafetyEngine } from '../lib/SafetyEngine';
 
-const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001/api');
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3001/api');
 
 /**
  * Format duration string from seconds

@@ -159,14 +159,18 @@ app.use('/api/weather', weatherRoutes)
 app.use(errorHandler)
 
 // ─── Start server ─────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`\n🛡  RakshaNav API running on http://localhost:${PORT}`)
-  console.log(`   GET  /api/health`)
-  console.log(`   GET  /api/dark-spots?severity=critical|high|medium`)
-  console.log(`   GET  /api/stats`)
-  console.log(`   GET  /api/routes`)
-  console.log(`   POST /api/sensor-report  { lat, lng, lux }`)
-  console.log(`   GET  /api/sensor-reports`)
-  console.log(`   POST /api/work-orders    { spotId, area, priority, notes }`)
-  console.log(`   POST /api/ai/*           (Gemini Integration Endpoints)\n`)
-})
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`\n🛡  RakshaNav API running on http://localhost:${PORT}`)
+    console.log(`   GET  /api/health`)
+    console.log(`   GET  /api/dark-spots?severity=critical|high|medium`)
+    console.log(`   GET  /api/stats`)
+    console.log(`   GET  /api/routes`)
+    console.log(`   POST /api/sensor-report  { lat, lng, lux }`)
+    console.log(`   GET  /api/sensor-reports`)
+    console.log(`   POST /api/work-orders    { spotId, area, priority, notes }`)
+    console.log(`   POST /api/ai/*           (Gemini Integration Endpoints)\n`)
+  })
+}
+
+module.exports = app
