@@ -34,22 +34,26 @@ const endpointState = ENDPOINTS.map(url => ({
 const spatialCache = new Map();
 const inFlightRequests = new Map();
 
+const TILE_SIZE = 0.02; // ~2.2km grid tiles
+
 /**
- * Calculates geographic area of bounding box in km²
+ * Generates a normalized spatial tile cache key
  */
-function calculateBBoxAreaKm2(minLat, minLng, maxLat, maxLng) {
-  const midLat = (minLat + maxLat) / 2;
-  const latKm = Math.abs(maxLat - minLat) * 111.0;
-  const lngKm = Math.abs(maxLng - minLng) * 111.0 * Math.cos(midLat * Math.PI / 180);
-  return Math.max(0.1, latKm * lngKm);
+function getTileKey(lat, lng) {
+  const tLat = Math.floor(lat / TILE_SIZE) * TILE_SIZE;
+  const tLng = Math.floor(lng / TILE_SIZE) * TILE_SIZE;
+  return `tile_${tLat.toFixed(3)}_${tLng.toFixed(3)}_v4`;
 }
 
 /**
- * Generates a normalized spatial bounding box cache key
+ * Generates bounding box string for a tile
  */
-function getBoundingBoxCacheKey(minLat, minLng, maxLat, maxLng) {
-  const round = (num) => (Math.floor(num * 50) / 50).toFixed(2); // ~2km tile precision
-  return `tile_${round(minLat)}_${round(maxLat)}_${round(minLng)}_${round(maxLng)}_v3`;
+function getTileBBoxStr(lat, lng) {
+  const minLat = Math.floor(lat / TILE_SIZE) * TILE_SIZE;
+  const minLng = Math.floor(lng / TILE_SIZE) * TILE_SIZE;
+  const maxLat = minLat + TILE_SIZE;
+  const maxLng = minLng + TILE_SIZE;
+  return `${minLat.toFixed(4)},${minLng.toFixed(4)},${maxLat.toFixed(4)},${maxLng.toFixed(4)}`;
 }
 
 /**
@@ -73,13 +77,14 @@ function buildOverpassQuery(bboxStr, essentialOnly = false) {
     return `[out:json][timeout:10];(node["amenity"~"police|hospital|clinic|pharmacy|fire_station"](${bboxStr}););out center;`;
   }
   
-  // Standard Query: Lightweight nodes only (No way["highway"] dumps!)
+  // Standard Query: Lightweight nodes only
   return `[out:json][timeout:15];(
-    node["amenity"~"police|hospital|clinic|pharmacy|fire_station|bank|atm|fuel|bus_station"](${bboxStr});
+    node["amenity"~"police|hospital|clinic|pharmacy|fire_station|bus_station"](${bboxStr});
     node["railway"="station"](${bboxStr});
-    node["highway"~"traffic_signals|crossing"](${bboxStr});
+    node["highway"~"traffic_signals|crossing|street_lamp"](${bboxStr});
     node["man_made"="surveillance"](${bboxStr});
     node["shop"](${bboxStr});
+    node["leisure"="park"](${bboxStr});
   );out center;`;
 }
 
@@ -228,136 +233,114 @@ function normalizeOverpassElements(elements) {
 }
 
 /**
- * Split a bounding box into smaller geographic grid chunks if area exceeds MAX_QUERY_AREA_SQ_KM
+ * Main Service API: Retrieves POIs for a set of sampled coordinates
+ * Supports Caching, In-flight Deduplication, and Spatial Tile Grids
  */
-function chunkBoundingBox(minLat, minLng, maxLat, maxLng) {
-  const area = calculateBBoxAreaKm2(minLat, minLng, maxLat, maxLng);
-  if (area <= CONFIG.MAX_QUERY_AREA_SQ_KM) {
-    return [{ minLat, minLng, maxLat, maxLng }];
+async function getPOIsForTiles(sampledCoords) {
+  if (!sampledCoords || sampledCoords.length === 0) {
+    return { status: 'unavailable', reason: 'no_coords', data: [], cacheHit: false };
   }
 
-  // Split into 2 or 4 geographic quadrants
-  const midLat = (minLat + maxLat) / 2;
-  const midLng = (minLng + maxLng) / 2;
+  const uniqueTiles = new Map();
+  sampledCoords.forEach(coord => {
+    const lng = coord[0];
+    const lat = coord[1];
+    const key = getTileKey(lat, lng);
+    if (!uniqueTiles.has(key)) {
+      uniqueTiles.set(key, getTileBBoxStr(lat, lng));
+    }
+  });
 
-  const chunks = [
-    { minLat, minLng, maxLat: midLat, maxLng: midLng },
-    { minLat: midLat, minLng, maxLat, maxLng: midLng },
-    { minLat, minLng: midLng, maxLat: midLat, maxLng },
-    { minLat: midLat, minLng: midLng, maxLat, maxLng }
-  ];
+  const tiles = Array.from(uniqueTiles.entries());
+  console.log(`[Infrastructure] Extracted ${tiles.length} distinct grid tiles for route.`);
+  console.log(`[Infrastructure] Query categories: police,hospital,pharmacy,fire_station,bus_station,metro,signals,cctv,shop,park,streetlight`);
 
-  return chunks.slice(0, CONFIG.MAX_QUERY_CHUNKS);
-}
+  const fetchPromiseArray = tiles.map(async ([cacheKey, bboxStr]) => {
+    // 1. Check Server-Side Tile Cache
+    const cached = spatialCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp < CONFIG.CACHE_TTL_MS)) {
+      console.log(`[Infrastructure] Cache hit for tile: ${cacheKey}`);
+      return { status: 'available', data: cached.pois, cacheHit: true };
+    }
 
-/**
- * Main Service API: Retrieves POIs for a geographic Bounding Box
- * Supports Caching, In-flight Deduplication, and Spatial Chunking for Large Boxes
- */
-async function getPOIsForBoundingBox(minLat, minLng, maxLat, maxLng) {
-  const area = calculateBBoxAreaKm2(minLat, minLng, maxLat, maxLng);
-  const cacheKey = getBoundingBoxCacheKey(minLat, minLng, maxLat, maxLng);
+    // 2. Check In-flight Request Cache
+    if (inFlightRequests.has(cacheKey)) {
+      console.log(`[Infrastructure] Request reused from in-flight cache (key: ${cacheKey})`);
+      return inFlightRequests.get(cacheKey);
+    }
 
-  console.log(`[Infrastructure] Candidate bbox: ${minLat.toFixed(4)},${minLng.toFixed(4)} to ${maxLat.toFixed(4)},${maxLng.toFixed(4)}`);
-  console.log(`[Infrastructure] BBox area: ${area.toFixed(1)} km²`);
-  console.log(`[Infrastructure] Query categories: police,hospital,pharmacy,fire_station,atm,fuel,bus_station,metro,signals,cctv`);
-
-  // 1. Check Server-Side Tile Cache
-  const cached = spatialCache.get(cacheKey);
-  if (cached && (Date.now() - cached.timestamp < CONFIG.CACHE_TTL_MS)) {
-    console.log(`[Infrastructure] Cache hit: true (key: ${cacheKey})`);
-    console.log(`[Infrastructure] POIs returned: ${cached.pois.length}`);
-    return { status: 'available', data: cached.pois, cacheHit: true };
-  }
-
-  // 2. Check In-flight Request Cache (Deduplication)
-  if (inFlightRequests.has(cacheKey)) {
-    console.log(`[Infrastructure] Request reused from in-flight cache (key: ${cacheKey})`);
-    return inFlightRequests.get(cacheKey);
-  }
-
-  // 3. Determine Chunks
-  const chunks = chunkBoundingBox(minLat, minLng, maxLat, maxLng);
-  console.log(`[Infrastructure] Query chunks: ${chunks.length}`);
-
-  const fetchPromise = (async () => {
-    let combinedPOIs = [];
-    let successfulChunks = 0;
-    let failedChunks = 0;
-
-    for (let i = 0; i < chunks.length; i++) {
-      const c = chunks[i];
-      const bMinLat = (c.minLat - 0.003).toFixed(4);
-      const bMinLng = (c.minLng - 0.003).toFixed(4);
-      const bMaxLat = (c.maxLat + 0.003).toFixed(4);
-      const bMaxLng = (c.maxLng + 0.003).toFixed(4);
-      const bboxStr = `${bMinLat},${bMinLng},${bMaxLat},${bMaxLng}`;
-
+    const fetchPromise = (async () => {
       try {
         const rawData = await fetchOverpassWithFailover(bboxStr);
         const chunkPois = normalizeOverpassElements(rawData.elements);
-        combinedPOIs.push(...chunkPois);
-        successfulChunks++;
+        spatialCache.set(cacheKey, { pois: chunkPois, timestamp: Date.now() });
+        if (spatialCache.size > 2000) spatialCache.delete(spatialCache.keys().next().value);
+        return { status: 'available', data: chunkPois, cacheHit: false };
       } catch (err) {
-        console.warn(`[Infrastructure] Chunk ${i + 1}/${chunks.length} failed: ${err.message}`);
-        failedChunks++;
+        console.warn(`[Infrastructure] Tile fetch failed for ${bboxStr}: ${err.message}`);
+        return { status: 'failed', error: err.message };
       }
+    })();
+
+    inFlightRequests.set(cacheKey, fetchPromise);
+    try {
+      const res = await fetchPromise;
+      inFlightRequests.delete(cacheKey);
+      return res;
+    } catch (err) {
+      inFlightRequests.delete(cacheKey);
+      return { status: 'failed', error: err.message };
     }
+  });
 
-    // Deduplicate merged POIs across chunks
-    const seen = new Set();
-    const uniquePOIs = combinedPOIs.filter(p => {
-      const k = `${p.lat.toFixed(4)},${p.lng.toFixed(4)}-${p.category}`;
-      if (seen.has(k)) return false;
-      seen.add(k);
-      return true;
-    });
+  const results = await Promise.allSettled(fetchPromiseArray);
+  
+  let combinedPOIs = [];
+  let successfulTiles = 0;
+  let failedTiles = 0;
 
-    if (successfulChunks === 0) {
-      console.error(`[Infrastructure] All ${chunks.length} query chunks failed. Returning structured unavailable state.`);
-      return {
-        status: 'unavailable',
-        reason: 'infrastructure_query_timeout',
-        data: [],
-        cacheHit: false
-      };
+  results.forEach(res => {
+    if (res.status === 'fulfilled' && res.value.status === 'available') {
+      combinedPOIs.push(...res.value.data);
+      successfulTiles++;
+    } else {
+      failedTiles++;
     }
+  });
 
-    const isPartial = failedChunks > 0;
-    const finalStatus = isPartial ? 'partial' : 'available';
+  // Deduplicate merged POIs across tiles
+  const seen = new Set();
+  const uniquePOIs = combinedPOIs.filter(p => {
+    const k = `${p.lat.toFixed(4)},${p.lng.toFixed(4)}-${p.category}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 
-    console.log(`[Infrastructure] POIs returned: ${uniquePOIs.length} (${successfulChunks}/${chunks.length} chunks succeeded, status: ${finalStatus})`);
-    
-    // Store in spatial cache
-    spatialCache.set(cacheKey, { pois: uniquePOIs, timestamp: Date.now() });
-    if (spatialCache.size > 150) spatialCache.delete(spatialCache.keys().next().value);
-
-    return {
-      status: finalStatus,
-      data: uniquePOIs,
-      cacheHit: false
-    };
-  })();
-
-  inFlightRequests.set(cacheKey, fetchPromise);
-
-  try {
-    const res = await fetchPromise;
-    inFlightRequests.delete(cacheKey);
-    return res;
-  } catch (err) {
-    inFlightRequests.delete(cacheKey);
+  if (successfulTiles === 0) {
+    console.error(`[Infrastructure] All ${tiles.length} query tiles failed.`);
     return {
       status: 'unavailable',
-      reason: err.message,
+      reason: 'all_tiles_failed',
       data: [],
       cacheHit: false
     };
   }
+
+  const isPartial = failedTiles > 0;
+  const finalStatus = isPartial ? 'partial' : 'available';
+
+  console.log(`[Infrastructure] POIs returned: ${uniquePOIs.length} (${successfulTiles}/${tiles.length} tiles succeeded, status: ${finalStatus})`);
+
+  return {
+    status: finalStatus,
+    data: uniquePOIs,
+    cacheHit: false
+  };
 }
 
 module.exports = {
-  getPOIsForBoundingBox,
+  getPOIsForTiles,
   normalizeOverpassElements,
   CONFIG
 };

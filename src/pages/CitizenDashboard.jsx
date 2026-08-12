@@ -33,8 +33,6 @@ export default function CitizenDashboard() {
   const [weatherData, setWeatherData] = useState(null);
   const [safetyMetrics, setSafetyMetrics] = useState(null);
   const [nearbyAlerts, setNearbyAlerts] = useState([]);
-  const [jurisdiction, setJurisdiction] = useState(null);
-  const [jurisdictionLoading, setJurisdictionLoading] = useState(false);
   
   const [reports, setReports] = useState([]);
   const [tripsCount, setTripsCount] = useState(0);
@@ -136,15 +134,6 @@ export default function CitizenDashboard() {
       } catch (e) { console.warn('Failed to fetch alerts', e); }
       setNearbyAlerts(realAlerts);
 
-      let currentJurisdiction = null;
-      try {
-        setJurisdictionLoading(true);
-        const { data: jData, error: jError } = await supabase.rpc('get_jurisdiction_by_location', { lat: position.lat, lng: position.lng });
-        if (!jError && jData && jData.length > 0) currentJurisdiction = jData[0];
-      } catch (e) { console.warn('Failed to fetch jurisdiction', e); }
-      finally { setJurisdictionLoading(false); }
-      setJurisdiction(currentJurisdiction);
-
       let metrics = null;
       try {
         const envUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
@@ -232,7 +221,7 @@ export default function CitizenDashboard() {
         <div className="flex flex-col gap-6 min-w-0 w-auto">
           
           {/* KPI Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <KpiCard 
               isDarkMode={isDarkMode}
               surface={surface} textPrimary={textPrimary} textSecondary={textSecondary}
@@ -284,18 +273,6 @@ export default function CitizenDashboard() {
               loading={havenState === 'LOADING' || gpsState === 'LOADING'}
               actionIcon={havenState === 'FOUND' && nearestHaven && <Navigation className="w-3 h-3" />}
               onAction={handleNavigateToHaven}
-            />
-            <KpiCard 
-              isDarkMode={isDarkMode}
-              surface={surface} textPrimary={textPrimary} textSecondary={textSecondary}
-              title="Police Jurisdiction" 
-              value={jurisdiction ? jurisdiction.station_name : 'No data'}
-              subtitle={jurisdiction ? `Division: ${jurisdiction.division || 'N/A'}` : 'Data unavailable for this region'}
-              icon={<ShieldCheck className="w-[18px] h-[18px] text-[#2563EB]" />}
-              iconBg={isDarkMode ? 'bg-[rgba(37,99,235,0.1)] border-[rgba(37,99,235,0.2)]' : 'bg-[#EFF6FF] border-[#DBEAFE]'}
-              trend="Official Data"
-              trendColor={isDarkMode ? 'bg-[rgba(37,99,235,0.1)] border-[rgba(37,99,235,0.2)] text-[#3b82f6]' : 'bg-[#EFF6FF] border-[#DBEAFE] text-[#2563EB]'}
-              loading={jurisdictionLoading || gpsState === 'LOADING'}
             />
           </div>
 

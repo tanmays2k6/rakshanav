@@ -149,7 +149,10 @@ exports.getRouteMetrics = async (req, res, next) => {
     const overpassStart = Date.now();
     try {
       infrastructure = await routeFeatureService.extractFeaturesForPolyline(coords);
-      diagnostics.overpass = { status: 'success', time: Date.now() - overpassStart };
+      diagnostics.overpass = { 
+        status: infrastructure.status === 'unavailable' ? 'error' : infrastructure.status === 'partial' ? 'partial' : 'success', 
+        time: Date.now() - overpassStart 
+      };
     } catch (e) {
       console.warn(`[Route Metrics] Overpass API failed: ${e.message}.`);
       diagnostics.overpass = { status: 'error', time: Date.now() - overpassStart, error: e.message };
@@ -221,7 +224,7 @@ exports.getRouteMetrics = async (req, res, next) => {
     const safetyStart = Date.now();
     const confidenceMetrics = {
       gps: true,
-      infrastructure: diagnostics.overpass.status === 'success',
+      infrastructure: diagnostics.overpass.status === 'success' ? true : diagnostics.overpass.status === 'partial' ? 0.5 : false,
       weather: weatherSuccess, 
       reports: supabaseSuccess,
       routing: true,
@@ -296,7 +299,9 @@ exports.getPointSafety = async (req, res, next) => {
 
     try {
       infrastructure = await routeFeatureService.extractFeaturesForPolyline(coords);
-      diagnostics.overpass = { status: 'success' };
+      diagnostics.overpass = { 
+        status: infrastructure.status === 'unavailable' ? 'error' : infrastructure.status === 'partial' ? 'partial' : 'success' 
+      };
     } catch (e) {
       console.warn(`[Point Safety] Overpass API failed: ${e.message}`);
       diagnostics.overpass = { status: 'error', error: e.message };
@@ -343,7 +348,7 @@ exports.getPointSafety = async (req, res, next) => {
 
     const confidenceMetrics = {
       gps: true,
-      infrastructure: diagnostics.overpass.status === 'success',
+      infrastructure: diagnostics.overpass.status === 'success' ? true : diagnostics.overpass.status === 'partial' ? 0.5 : false,
       weather: weatherSuccess, 
       reports: supabaseSuccess,
       routing: false,

@@ -346,21 +346,13 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
         
         let metrics;
         try {
-          // Hard timeout for infrastructure request (35s)
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("infrastructure_timeout")), 35000)
-          );
-          
-          metrics = await Promise.race([
-            mapService.getRouteMetrics(route.geometry, route.distanceRaw, route.durationRaw, abortController.signal),
-            timeoutPromise
-          ]);
+          metrics = await mapService.getRouteMetrics(route.geometry, route.distanceRaw, route.durationRaw, abortController.signal);
         } catch (err) {
           if (err.name === 'AbortError') return;
-          console.warn(`[RouteScan] Metric timeout/error for route ${route.id}:`, err.message);
+          console.warn(`[RouteScan] Metric fetch error for route ${route.id}:`, err.message);
           metrics = {
             infrastructure: null,
-            infrastructureStatus: err.message === 'infrastructure_timeout' ? 'unavailable' : 'unavailable',
+            infrastructureStatus: 'unavailable',
             reports: null,
             score: null,
             confidence: 50,

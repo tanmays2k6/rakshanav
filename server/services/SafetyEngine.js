@@ -83,7 +83,8 @@ const SafetyEngine = {
   calculateConfidence(metrics) {
     let confidence = 0;
     if (metrics.gps) confidence += 100 * CONFIDENCE_WEIGHTS.gps;
-    if (metrics.infrastructure) confidence += 100 * CONFIDENCE_WEIGHTS.infrastructure;
+    if (metrics.infrastructure === true) confidence += 100 * CONFIDENCE_WEIGHTS.infrastructure;
+    else if (typeof metrics.infrastructure === 'number') confidence += 100 * CONFIDENCE_WEIGHTS.infrastructure * metrics.infrastructure;
     if (metrics.weather) confidence += 100 * CONFIDENCE_WEIGHTS.weather;
     if (metrics.reports) confidence += 100 * CONFIDENCE_WEIGHTS.reports;
     if (metrics.routing !== false) confidence += 100 * CONFIDENCE_WEIGHTS.routing; 

@@ -73,11 +73,11 @@ exports.extractFeaturesForPolyline = async (polylineCoords) => {
 
   console.log(`[Infrastructure] Route length: ${totalDistKm.toFixed(1)} km`);
 
-  // 3. Fetch POIs via Overpass Service (Handles Bounding Box Chunking, Spatial Caching, and 504 Fallback)
-  const poiResult = await overpassService.getPOIsForBoundingBox(minLat, minLng, maxLat, maxLng);
+  // 3. Fetch POIs via Overpass Service using Grid Tiles
+  const poiResult = await overpassService.getPOIsForTiles(sampledCoords);
 
   if (poiResult.status === 'unavailable' || !poiResult.data) {
-    console.warn(`[Infrastructure] POIs unavailable for route bounding box: ${poiResult.reason || 'Unknown'}`);
+    console.warn(`[Infrastructure] POIs unavailable for route tiles: ${poiResult.reason || 'Unknown'}`);
     return getNullInfrastructure();
   }
 
