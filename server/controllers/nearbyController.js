@@ -35,7 +35,16 @@ exports.getNearbyHavens = async (req, res, next) => {
     const minLng = numericLng - lngDelta;
     const maxLng = numericLng + lngDelta;
 
-    const result = await overpassService.getPOIsForBoundingBox(minLat, minLng, maxLat, maxLng);
+    // Generate sampled coordinates from bbox corners and center to fetch necessary tiles
+    const sampledCoords = [
+      [minLng, minLat],
+      [minLng, maxLat],
+      [maxLng, minLat],
+      [maxLng, maxLat],
+      [numericLng, numericLat] // Center
+    ];
+
+    const result = await overpassService.getPOIsForTiles(sampledCoords);
 
     if (result.status === 'unavailable' || !result.data) {
       return res.json({
