@@ -138,12 +138,17 @@ export default function DashboardLayout({ children }) {
       { label: 'Audit Logs', icon: History, path: '/enterprise/audit' }
     ],
     government: [
-      { label: 'Command Center', icon: Map, path: '/government' },
-      { label: 'Live Reports', icon: ShieldAlert, path: '/government/reports' },
-      { label: 'Ward Monitoring', icon: Users, path: '/government/ward' },
-      { label: 'Infrastructure', icon: Bot, path: '/government/infrastructure' },
-      { label: 'Notifications', icon: Bell, path: '/government/notifications' },
-      { label: 'Crime Analytics', icon: History, path: '/government/analytics' }
+      { label: 'Overview', icon: Home, path: '/government' },
+      { label: 'Live Safety Map', icon: Map, path: '/government/live-map' },
+      { label: 'Emergency Response', icon: ShieldAlert, path: '/government/emergency' },
+      { label: 'Citizen Reports', icon: AlertTriangle, path: '/government/reports' },
+      { label: 'Safety Heatmap', icon: MapPin, path: '/government/heatmap' },
+      { label: 'Women\'s Safety', icon: Users, path: '/government/womens-safety' },
+      { label: 'Infrastructure Intel', icon: Bot, path: '/government/infrastructure-intelligence' },
+      { label: 'Analytics', icon: Activity, path: '/government/analytics' },
+      { label: 'Response Performance', icon: History, path: '/government/response-performance' },
+      { label: 'Audit Logs', icon: History, path: '/government/audit-logs' },
+      { label: 'Administration', icon: Settings, path: '/government/admin' }
     ],
     admin: [
       { label: 'System Overview', icon: Activity, path: '/admin' },

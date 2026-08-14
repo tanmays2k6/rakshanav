@@ -45,6 +45,9 @@ import GovNotifications from './pages/government/Notifications';
 import GovAnalytics from './pages/government/Analytics';
 import WardMonitoring from './pages/government/WardMonitoring';
 import Infrastructure from './pages/government/Infrastructure';
+import EmergencyResponse from './pages/government/EmergencyResponse';
+import WomensSafety from './pages/government/WomensSafety';
+import ResponsePerformance from './pages/government/ResponsePerformance';
 
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -155,12 +158,17 @@ export default function App() {
             } 
           >
             <Route index element={<GovernmentDashboard />} />
+            <Route path="live-map" element={<GovernmentDashboard />} />
+            <Route path="emergency" element={<EmergencyResponse />} />
             <Route path="reports" element={<LiveReports />} />
             <Route path="reports/:id" element={<ReportDetail />} />
-            <Route path="ward" element={<WardMonitoring />} />
-            <Route path="infrastructure" element={<Infrastructure />} />
-            <Route path="notifications" element={<GovNotifications />} />
+            <Route path="heatmap" element={<WardMonitoring />} />
+            <Route path="womens-safety" element={<WomensSafety />} />
+            <Route path="infrastructure-intelligence" element={<Infrastructure />} />
             <Route path="analytics" element={<GovAnalytics />} />
+            <Route path="response-performance" element={<ResponsePerformance />} />
+            <Route path="audit-logs" element={<GovNotifications />} />
+            <Route path="admin" element={<GovernmentDashboard />} />
           </Route>
 
           {/* Admin Routes */}

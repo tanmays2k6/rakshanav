@@ -291,11 +291,89 @@ export const governmentService = {
   },
 
   /**
+   * Get Aggregated Analytics via RPC
+   */
+  async getAnalytics(startDate, endDate) {
+    const { data, error } = await supabase.rpc('get_gov_analytics', {
+      start_date: startDate.toISOString(),
+      end_date: endDate.toISOString()
+    });
+
+    if (error) {
+      console.error('[governmentService] getAnalytics error:', error);
+      return null;
+    }
+    return data;
+  },
+
+  /**
+   * Get Daily Analytics for Charts via RPC
+   */
+  async getDailyAnalytics(startDate, endDate) {
+    const { data, error } = await supabase.rpc('get_daily_gov_analytics', {
+      start_date: startDate.toISOString(),
+      end_date: endDate.toISOString()
+    });
+
+    if (error) {
+      console.error('[governmentService] getDailyAnalytics error:', error);
+      return [];
+    }
+    return data;
+  },
+
+  /**
+   * Get Safety Heatmap Data via RPC
+   */
+  async getSafetyHeatmap(startDate, endDate) {
+    const { data, error } = await supabase.rpc('get_safety_heatmap_data', {
+      start_date: startDate.toISOString(),
+      end_date: endDate.toISOString()
+    });
+
+    if (error) {
+      console.error('[governmentService] getSafetyHeatmap error:', error);
+      return [];
+    }
+    return data;
+  },
+
+  /**
+   * Get Active SOS Events via RPC
+   */
+  async getActiveSosEvents() {
+    const { data, error } = await supabase.rpc('get_active_sos_events');
+    if (error) {
+      console.error('[governmentService] getActiveSosEvents error:', error);
+      return [];
+    }
+    return data;
+  },
+
+  /**
    * Realtime subscriptions
    */
   subscribeToReports(callback) {
     return supabase.channel('government_incident_reports')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'incident_reports' }, callback)
       .subscribe();
+  },
+
+  /**
+   * Audit Logging
+   */
+  async logAudit(userId, action, resourceType, resourceId, metadata = {}) {
+    try {
+      const { error } = await supabase.from('audit_logs').insert([{
+        admin_id: userId,
+        action,
+        resource_type: resourceType,
+        resource_id: resourceId,
+        metadata
+      }]);
+      if (error) console.error('[governmentService] logAudit error:', error);
+    } catch (err) {
+      console.error('[governmentService] logAudit exception:', err);
+    }
   }
 };

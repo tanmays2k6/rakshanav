@@ -7,6 +7,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [role, setRole] = useState(null)
+  const [subRole, setSubRole] = useState(null)
   const [profileCompleted, setProfileCompleted] = useState(false)
   
   // loading is for the core Auth session
@@ -78,9 +79,24 @@ export function AuthProvider({ children }) {
           }
         } else {
           // Profile exists
+          let fetchedSubRole = null;
+          if (data.role === 'government') {
+            try {
+              const { data: govData } = await supabase
+                .from('government_members')
+                .select('role')
+                .eq('user_id', sessionUser.id)
+                .single();
+              if (govData) fetchedSubRole = govData.role;
+            } catch (err) {
+              console.error('[AuthContext] Error fetching subRole:', err);
+            }
+          }
+
           if (mounted) {
             setProfile(data);
             setRole(data.role);
+            setSubRole(fetchedSubRole);
             setProfileCompleted(data.profile_completed || false);
           }
         }
@@ -88,6 +104,7 @@ export function AuthProvider({ children }) {
         console.error('[AuthContext] Error fetching/creating profile:', error);
         if (mounted) {
           setRole('unassigned');
+          setSubRole(null);
           setProfile(null);
           setProfileCompleted(false);
         }
@@ -131,6 +148,7 @@ export function AuthProvider({ children }) {
         setupSubscription(session.user.id);
       } else {
         setRole(null);
+        setSubRole(null);
         setProfile(null);
         setProfileCompleted(false);
         setLoading(false);
@@ -162,8 +180,21 @@ export function AuthProvider({ children }) {
           .single();
           
         if (!error && data) {
+          let fetchedSubRole = null;
+          if (data.role === 'government') {
+             try {
+                const { data: govData } = await supabase
+                  .from('government_members')
+                  .select('role')
+                  .eq('user_id', user.id)
+                  .single();
+                if (govData) fetchedSubRole = govData.role;
+             } catch (err) {}
+          }
+
           setProfile(data);
           setRole(data.role);
+          setSubRole(fetchedSubRole);
           setProfileCompleted(data.profile_completed || false);
         }
       } catch (err) {
@@ -176,6 +207,7 @@ export function AuthProvider({ children }) {
     user,
     profile,
     role,
+    subRole,
     profileCompleted,
     setRole, 
     refreshProfile,

@@ -2,8 +2,8 @@ import React from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
-export default function ProtectedRoute({ children, allowedRoles }) {
-  const { user, role, profileCompleted, loading, profileLoading } = useAuth();
+export default function ProtectedRoute({ children, allowedRoles, allowedSubRoles }) {
+  const { user, role, subRole, profileCompleted, loading, profileLoading } = useAuth();
 
   if (loading || profileLoading) {
     return <div className="h-screen flex items-center justify-center bg-[#080c10] text-white">Loading...</div>;
@@ -27,6 +27,10 @@ export default function ProtectedRoute({ children, allowedRoles }) {
   }
 
   if (allowedRoles && !allowedRoles.includes(role)) {
+    return <Navigate to="/access-denied" replace />;
+  }
+  
+  if (allowedSubRoles && !allowedSubRoles.includes(subRole)) {
     return <Navigate to="/access-denied" replace />;
   }
 
