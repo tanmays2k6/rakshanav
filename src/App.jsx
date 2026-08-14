@@ -3,6 +3,24 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom
 import { AuthProvider } from './contexts/AuthContext';
 import { AIProvider } from './contexts/AIContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import { useAuth } from './contexts/AuthContext';
+
+const RootRedirect = () => {
+  const { user, role, loading, profileLoading } = useAuth();
+  
+  if (loading || profileLoading) {
+    return <div className="h-screen flex items-center justify-center bg-[#080c10] text-white">Loading...</div>;
+  }
+  
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  if (role === 'government') return <Navigate to="/government" replace />;
+  if (role === 'enterprise') return <Navigate to="/enterprise" replace />;
+  if (role === 'admin') return <Navigate to="/admin" replace />;
+  return <Navigate to="/dashboard" replace />;
+};
 
 
 // Pages
@@ -164,7 +182,7 @@ export default function App() {
           </Route>
 
           {/* Default Redirect & 404 */}
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/" element={<RootRedirect />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
         </BrowserRouter>
