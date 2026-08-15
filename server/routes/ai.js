@@ -9,7 +9,7 @@ router.post('/analyze-single-route', aiController.analyzeSingleRoute);
 router.post('/summary', aiController.summarizeIncidents);
 router.post('/recommendation', aiController.generateRecommendation);
 router.post('/classify-hazard', aiController.classifyHazard);
-router.post('/analyze-hazard-image', aiController.analyzeHazardImage);
+router.post('/analyze-hazard-image', express.json({ limit: '10mb' }), aiController.analyzeHazardImage);
 router.post('/expand-description', aiController.expandHazardDescription);
 router.post('/trip-insights', aiController.generateTripInsights);
 

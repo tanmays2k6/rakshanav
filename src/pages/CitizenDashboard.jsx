@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   ShieldCheck, MapPin, Activity, Navigation, AlertTriangle, 
   Bot, Map, Users, ChevronRight, Zap, Navigation2, 
@@ -9,9 +9,9 @@ import UserView from '../components/UserView';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useLocationState } from '../contexts/LocationContext';
 import { Link, useNavigate } from 'react-router-dom';
 
-import { locationService } from '../services/locationService';
 import { placesService } from '../services/placesService';
 import { weatherService } from '../services/weatherService';
 import { SafetyEngine } from '../lib/SafetyEngine';
@@ -20,15 +20,31 @@ export default function CitizenDashboard() {
   const { user } = useAuth();
   const { isDarkMode } = useTheme();
   const navigate = useNavigate();
+
+  // Centralized Location State
+  const {
+    lat,
+    lng,
+    coordinates,
+    accuracy,
+    address,
+    addressDetails,
+    addressLoading,
+    status: locStatus,
+    isDenied,
+    isTimeout,
+    error: locError,
+    freshness,
+    refreshLocation,
+    isWithinSupportedRegion
+  } = useLocationState();
   
   const [loading, setLoading] = useState(true);
-  const [gpsState, setGpsState] = useState('LOADING');
   const [havenState, setHavenState] = useState('LOADING');
-  const lastSearchedRef = React.useRef(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const lastSearchedRef = useRef(null);
   
   const [errorMsg, setErrorMsg] = useState(null);
-  const [liveLocation, setLiveLocation] = useState(null);
-  const [addressData, setAddressData] = useState(null);
   const [nearestHaven, setNearestHaven] = useState(null);
   const [weatherData, setWeatherData] = useState(null);
   const [safetyMetrics, setSafetyMetrics] = useState(null);
@@ -43,23 +59,11 @@ export default function CitizenDashboard() {
   const [showHavens, setShowHavens] = useState(true);
   const [showJurisdictions, setShowJurisdictions] = useState(false);
 
-  const fetchLiveData = async () => {
-    if (!liveLocation) setLoading(true);
-    
-    let position;
-    try {
-      if (!liveLocation) setGpsState('LOADING');
-      position = await locationService.getCurrentPosition();
-      setLiveLocation(position);
-      setGpsState('AVAILABLE');
-      setErrorMsg(null);
-    } catch (err) {
-      console.warn('GPS failed:', err);
-      if (err.message && err.message.toLowerCase().includes('denied')) {
-        setGpsState('DENIED');
-      } else {
-        setGpsState('ERROR');
-      }
+  const fetchDashboardData = useCallback(async (targetLat, targetLng) => {
+    const currentLat = targetLat !== undefined ? targetLat : lat;
+    const currentLng = targetLng !== undefined ? targetLng : lng;
+
+    if (!currentLat || !currentLng) {
       setLoading(false);
       return;
     }
@@ -67,14 +71,13 @@ export default function CitizenDashboard() {
     const lastLoc = lastSearchedRef.current;
     let shouldFetchHavens = true;
     if (lastLoc && nearestHaven) {
-      const dist = placesService.calculateDistance(lastLoc.lat, lastLoc.lng, position.lat, position.lng);
+      const dist = placesService.calculateDistance(lastLoc.lat, lastLoc.lng, currentLat, currentLng);
       if (dist < 0.2) shouldFetchHavens = false;
     }
 
     try {
       const fetchPromises = [
-        locationService.reverseGeocode(position.lat, position.lng),
-        weatherService.getWeather(position.lat, position.lng),
+        weatherService.getWeather(currentLat, currentLng),
         supabase.from('incident_reports').select('*').eq('user_id', user?.id).gte('created_at', new Date(new Date().setHours(0,0,0,0)).toISOString()),
         supabase.from('trip_history').select('*').eq('user_id', user?.id).gte('started_at', new Date(new Date().setHours(0,0,0,0)).toISOString())
       ];
@@ -82,16 +85,16 @@ export default function CitizenDashboard() {
       let havensPromise = Promise.resolve({ status: 'skipped' });
       if (shouldFetchHavens) {
         setHavenState('LOADING');
-        havensPromise = placesService.getNearbyHavens(position.lat, position.lng)
+        havensPromise = placesService.getNearbyHavens(currentLat, currentLng)
           .then(res => ({ status: 'fulfilled', value: res }))
           .catch(err => ({ status: 'rejected', reason: err }));
       }
 
-      const [address, weather, reportsData, tripsData] = await Promise.allSettled(fetchPromises);
+      const [weather, reportsData, tripsData] = await Promise.allSettled(fetchPromises);
       const havens = await havensPromise;
 
       if (shouldFetchHavens) {
-        lastSearchedRef.current = { lat: position.lat, lng: position.lng };
+        lastSearchedRef.current = { lat: currentLat, lng: currentLng };
         if (havens.status === 'fulfilled' && havens.value && havens.value.length > 0) {
           setNearestHaven(havens.value[0]);
           setHavenState('FOUND');
@@ -104,40 +107,31 @@ export default function CitizenDashboard() {
         }
       }
 
-      let weatherCode = 0;
-      let windSpeed = 0;
-
-      if (address.status === 'fulfilled') setAddressData(address.value);
       if (weather.status === 'fulfilled') {
         setWeatherData(weather.value);
-        weatherCode = weather.value.weather_code;
-        windSpeed = weather.value.wind_speed_10m;
       }
       if (reportsData.status === 'fulfilled' && reportsData.value.data) setReports(reportsData.value.data);
       if (tripsData.status === 'fulfilled' && tripsData.value.data) setTripsCount(tripsData.value.data.length);
 
       let realAlerts = [];
-      let supabaseSuccess = false;
       try {
-        const lat = position.lat;
-        const lng = position.lng;
         const offset = 0.045;
         const { data, error } = await supabase
           .from('public_incident_view')
           .select('*')
           .eq('status', 'pending')
-          .gte('lat', lat - offset).lte('lat', lat + offset)
-          .gte('lng', lng - offset).lte('lng', lng + offset)
+          .gte('lat', currentLat - offset).lte('lat', currentLat + offset)
+          .gte('lng', currentLng - offset).lte('lng', currentLng + offset)
           .order('created_at', { ascending: false })
           .limit(10);
-        if (!error && data) { realAlerts = data; supabaseSuccess = true; }
+        if (!error && data) { realAlerts = data; }
       } catch (e) { console.warn('Failed to fetch alerts', e); }
       setNearbyAlerts(realAlerts);
 
       let metrics = null;
       try {
         const envUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
-        const res = await fetch(`${envUrl}/api/route/safety/point?lat=${position.lat}&lng=${position.lng}`);
+        const res = await fetch(`${envUrl}/api/route/safety/point?lat=${currentLat}&lng=${currentLng}`);
         if (res.ok) {
           const data = await res.json();
           if (data.success && data.available) {
@@ -158,6 +152,7 @@ export default function CitizenDashboard() {
       }
       
       setSafetyMetrics(metrics);
+      setErrorMsg(null);
 
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
@@ -165,20 +160,45 @@ export default function CitizenDashboard() {
     } finally {
       setLoading(false);
     }
+  }, [lat, lng, user?.id, nearestHaven]);
+
+  // Sync dashboard data when centralized coordinates update
+  useEffect(() => {
+    if (lat && lng) {
+      fetchDashboardData(lat, lng);
+    }
+  }, [lat, lng, fetchDashboardData]);
+
+  // Periodic refresh for non-GPS dashboard data
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (lat && lng) {
+        fetchDashboardData(lat, lng);
+      }
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [lat, lng, fetchDashboardData]);
+
+  const handleAddReport = async () => { 
+    if (lat && lng) fetchDashboardData(lat, lng); 
   };
 
-  useEffect(() => {
-    fetchLiveData();
-    const interval = setInterval(fetchLiveData, 60000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleAddReport = async () => { fetchLiveData(); };
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshLocation({ highAccuracy: true });
+      if (lat && lng) {
+        await fetchDashboardData(lat, lng);
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const handleNavigateToHaven = () => {
     if (nearestHaven) {
       navigate('/dashboard/navigation', {
-        state: { origin: liveLocation ? 'Current Location' : '', destination: nearestHaven.name, autoTrigger: true }
+        state: { origin: coordinates ? 'Current Location' : '', destination: nearestHaven.name, autoTrigger: true }
       });
     }
   };
@@ -240,15 +260,47 @@ export default function CitizenDashboard() {
               isDarkMode={isDarkMode}
               surface={surface} textPrimary={textPrimary} textSecondary={textSecondary}
               title="Current Location" 
-              value={gpsState === 'AVAILABLE' && addressData ? (addressData.address.suburb || addressData.address.city_district || 'Unknown') : (gpsState === 'DENIED' ? 'Location denied' : 'Location unavailable')}
-              subtitle={gpsState === 'AVAILABLE' && liveLocation ? `Accuracy: ±${Math.round(liveLocation.accuracy)}m` : (gpsState === 'LOADING' ? 'Finding your location...' : 'Check permissions')}
+              value={
+                coordinates ? (
+                  addressDetails?.suburb || addressDetails?.neighbourhood || addressDetails?.city_district || addressDetails?.road || address || (addressLoading ? 'Locating...' : 'Location detected')
+                ) : isDenied ? (
+                  'Location denied'
+                ) : locStatus === 'requesting' || locStatus === 'idle' ? (
+                  'Acquiring GPS...'
+                ) : isTimeout ? (
+                  'Signal timeout'
+                ) : (
+                  'Location unavailable'
+                )
+              }
+              subtitle={
+                coordinates ? (
+                  `Accuracy: ±${Math.round(accuracy || 0)}m${!isWithinSupportedRegion ? ' • Outside BMR' : ''}`
+                ) : locStatus === 'requesting' || locStatus === 'idle' ? (
+                  'Finding your location...'
+                ) : isDenied ? (
+                  'Enable location in settings'
+                ) : locError ? (
+                  locError
+                ) : (
+                  'Check permissions'
+                )
+              }
               icon={<MapPin className="w-[18px] h-[18px] text-[#2563EB]" />}
               iconBg={isDarkMode ? 'bg-[rgba(37,99,235,0.1)] border-[rgba(37,99,235,0.2)]' : 'bg-[#EFF6FF] border-[#DBEAFE]'}
-              trend="GPS"
-              trendColor={isDarkMode ? 'bg-[rgba(37,99,235,0.1)] border-[rgba(37,99,235,0.2)] text-[#3b82f6]' : 'bg-[#EFF6FF] border-[#DBEAFE] text-[#2563EB]'}
-              loading={gpsState === 'LOADING'}
-              actionIcon={<RefreshCw className={`w-3 h-3 ${gpsState === 'LOADING' ? 'animate-spin' : ''}`} />}
-              onAction={fetchLiveData}
+              trend={coordinates ? `GPS • ${freshness}` : 'GPS'}
+              trendColor={
+                coordinates ? (
+                  isDarkMode ? 'bg-[rgba(34,197,94,0.1)] border-[rgba(34,197,94,0.2)] text-[#22c55e]' : 'bg-[#F0FDF4] border-[#BBF7D0] text-[#16A34A]'
+                ) : isDenied ? (
+                  isDarkMode ? 'bg-[rgba(239,68,68,0.1)] border-[rgba(239,68,68,0.2)] text-[#ef4444]' : 'bg-[#FEF2F2] border-[#FECACA] text-[#DC2626]'
+                ) : (
+                  isDarkMode ? 'bg-[rgba(37,99,235,0.1)] border-[rgba(37,99,235,0.2)] text-[#3b82f6]' : 'bg-[#EFF6FF] border-[#DBEAFE] text-[#2563EB]'
+                )
+              }
+              loading={locStatus === 'requesting' || (locStatus === 'idle' && !coordinates)}
+              actionIcon={<RefreshCw className={`w-3 h-3 ${isRefreshing || locStatus === 'requesting' ? 'animate-spin' : ''}`} />}
+              onAction={handleRefresh}
             />
             <KpiCard 
               isDarkMode={isDarkMode}
@@ -270,7 +322,7 @@ export default function CitizenDashboard() {
               iconBg={isDarkMode ? 'bg-[rgba(245,158,11,0.1)] border-[rgba(245,158,11,0.2)]' : 'bg-[#FFFBEB] border-[#FDE68A]'}
               trend="Map Data"
               trendColor={isDarkMode ? 'bg-[rgba(249,115,22,0.1)] border-[rgba(249,115,22,0.2)] text-[#f97316]' : 'bg-[#FFFBEB] border-[#FDE68A] text-[#F59E0B]'}
-              loading={havenState === 'LOADING' || gpsState === 'LOADING'}
+              loading={havenState === 'LOADING' || loading}
               actionIcon={havenState === 'FOUND' && nearestHaven && <Navigation className="w-3 h-3" />}
               onAction={handleNavigateToHaven}
             />
@@ -311,7 +363,7 @@ export default function CitizenDashboard() {
                   onAddReport={handleAddReport} 
                   userReports={reports} 
                   isDashboard={true} 
-                  liveLocation={liveLocation}
+                  liveLocation={coordinates ? { lat, lng, accuracy } : null}
                   showTraffic={showTraffic}
                   showCommunity={showCommunity}
                   showStreetlights={showStreetlights}

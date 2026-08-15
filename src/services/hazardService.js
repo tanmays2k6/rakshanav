@@ -98,30 +98,39 @@ export const hazardService = {
   async uploadPhoto(file, userId) {
     if (!file) return null;
     
-    // Scope upload path to the authenticated user's UUID.
-    // This ensures storage policies can be user-scoped if needed.
-    const ext = file.name.split('.').pop();
-    const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${ext}`;
-    const storagePath = userId ? `${userId}/${fileName}` : `public/${fileName}`;
-    
-    const { data, error } = await supabase.storage
-      .from('hazards')
-      .upload(storagePath, file, {
-        cacheControl: '3600',
-        upsert: false
-      });
+    try {
+      // Scope upload path to the authenticated user's UUID
+      const ext = file.name ? file.name.split('.').pop().toLowerCase() : 'jpg';
+      const cleanExt = ['jpg', 'jpeg', 'png', 'webp'].includes(ext) ? ext : 'jpg';
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${cleanExt}`;
+      const storagePath = userId ? `${userId}/${fileName}` : `public/${fileName}`;
+      
+      const { data, error } = await supabase.storage
+        .from('hazards')
+        .upload(storagePath, file, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: file.type || 'image/jpeg'
+        });
 
-    if (error) {
-      console.error('Error uploading photo:', error);
+      if (error) {
+        console.error('[hazardService] Error uploading photo to hazards bucket:', {
+          message: error.message,
+          error
+        });
+        return null;
+      }
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('hazards')
+        .getPublicUrl(storagePath);
+        
+      return urlData?.publicUrl || null;
+    } catch (e) {
+      console.error('[hazardService] Unexpected error in uploadPhoto:', e);
       return null;
     }
-
-    // Get public URL
-    const { data: urlData } = supabase.storage
-      .from('hazards')
-      .getPublicUrl(storagePath);
-      
-    return urlData.publicUrl;
   },
 
   /**
@@ -129,7 +138,6 @@ export const hazardService = {
    */
   async submitReport(reportData) {
     // Verify the session is still live before attempting the insert.
-    // This catches expired tokens early and gives a clean error.
     const { data: { user }, error: sessionError } = await supabase.auth.getUser();
     if (sessionError || !user) {
       return { 
@@ -139,20 +147,42 @@ export const hazardService = {
       };
     }
 
+    // Clean payload to match exact Supabase schema
+    const payload = {
+      user_id: user.id,
+      title: reportData.title || `${reportData.category || 'Hazard'} Report`,
+      category: reportData.category,
+      priority: reportData.priority || 'Medium',
+      latitude: Number(reportData.latitude),
+      longitude: Number(reportData.longitude),
+      address: reportData.address || null,
+      city: reportData.city || 'Bengaluru',
+      description: reportData.description || null,
+      photo_url: reportData.photo_url || null,
+      severity: reportData.severity || 'Medium',
+      is_anonymous: Boolean(reportData.is_anonymous)
+    };
+
     const { error, data } = await supabase
       .from('incident_reports')
-      .insert([reportData])
+      .insert([payload])
       .select('id')
       .single();
 
     if (error) {
-      if (import.meta.env.DEV) {
-        console.error('[Supabase] Error submitting report:', error);
-        console.error('[Supabase] Error code:', error.code);
-        console.error('[Supabase] Error details:', error.details);
-        console.error('[Supabase] Error hint:', error.hint);
-      }
-      return { success: false, error: error.message, code: error.code, details: error.details };
+      console.error('[Supabase] Error submitting incident report:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+      return { 
+        success: false, 
+        error: error.message, 
+        code: error.code, 
+        details: error.details,
+        hint: error.hint
+      };
     }
     
     return { success: true, id: data.id };

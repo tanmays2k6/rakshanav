@@ -6,6 +6,7 @@ import { geminiService } from '../services/geminiService'
 import { tripService } from '../services/tripService'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
+import { useLocationState } from '../contexts/LocationContext'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const luxColor = (l) => l < 5 ? '#ef4444' : l < 15 ? '#f97316' : '#22c55e'
@@ -83,9 +84,20 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
   const [phase,        setPhase]        = useState('idle')
   const [activeLocationField, setActiveLocationField] = useState(null)
   
-  // GPS State
+  // Centralized GPS State from LocationContext
+  const {
+    lat: locLat,
+    lng: locLng,
+    coordinates: locCoords,
+    accuracy: locAccuracy,
+    address: locAddress,
+    status: locStatus,
+    isWithinSupportedRegion,
+    refreshLocation
+  } = useLocationState()
+
   const [useGps,       setUseGps]       = useState(true)
-  const [gpsStatus,    setGpsStatus]    = useState('pending')
+  const [gpsStatus,    setGpsStatus]    = useState('locating')
   const [currentCoords, setCurrentCoords] = useState(null)
   const [currentAddress, setCurrentAddress] = useState('')
   const [gpsAccuracy,  setGpsAccuracy]  = useState(null)
@@ -117,65 +129,40 @@ export default function UserView({ onAddReport, userReports = [], initialOrigin 
   // Jurisdictions State
   const [jurisdictionsData, setJurisdictionsData] = useState(null)
 
-  // ── Auto GPS Initialization ──────────────────────────────────────────────
+  // ── Sync with Centralized Location Provider ───────────────────────────────
+  useEffect(() => {
+    if (locCoords && locLat !== null && locLng !== null) {
+      setCurrentCoords({ lat: locLat, lng: locLng })
+      setGpsAccuracy(locAccuracy)
+      if (locAddress) {
+        setCurrentAddress(locAddress)
+      } else {
+        setCurrentAddress('Current Location')
+      }
+
+      if (!isWithinSupportedRegion) {
+        setGpsStatus('out_of_bounds')
+        if (isDashboard) {
+          setErrorMsg(`Location detected outside supported region. RakshaNav is currently optimized for Bengaluru.`)
+          setPhase('error')
+        }
+      } else {
+        setGpsStatus('granted')
+      }
+    } else if (locStatus === 'denied') {
+      setGpsStatus('denied')
+      setUseGps(false)
+    } else if (locStatus === 'requesting' || locStatus === 'idle') {
+      setGpsStatus('locating')
+    } else {
+      setGpsStatus('error')
+    }
+  }, [locCoords, locLat, locLng, locAccuracy, locAddress, locStatus, isWithinSupportedRegion, isDashboard])
+
   const requestGPS = useCallback(() => {
     setGpsStatus('locating')
-    if (!navigator.geolocation) {
-      setGpsStatus('error')
-      setUseGps(false)
-      return
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const lat = pos.coords.latitude
-        const lng = pos.coords.longitude
-        setCurrentCoords({ lat, lng })
-        setGpsAccuracy(pos.coords.accuracy)
-        
-        try {
-          const rev = await locationService.reverseGeocode(lat, lng)
-          const address = rev.displayName || 'Current Location'
-          setCurrentAddress(address)
-          
-          if (!isWithinBengaluru(lat, lng)) {
-            setGpsStatus('out_of_bounds')
-            setUseGps(true) // DO NOT disable GPS just because we are outside Bengaluru routing area
-            if (isDashboard) {
-               setErrorMsg(`Location detected outside supported region. RakshaNav is currently optimized for Bengaluru.`)
-               setPhase('error')
-            }
-          } else {
-            setGpsStatus('granted')
-            setUseGps(true)
-          }
-        } catch (e) {
-          setCurrentAddress('Current Location (Unknown Address)')
-          if (isWithinBengaluru(lat, lng)) {
-             setGpsStatus('granted')
-             setUseGps(true)
-          } else {
-             setGpsStatus('out_of_bounds')
-             setUseGps(true)
-             if (isDashboard) {
-                setErrorMsg(`Location detected outside supported region. RakshaNav is currently optimized for Bengaluru.`)
-                setPhase('error')
-             }
-          }
-        }
-      },
-      (err) => {
-        console.warn('GPS Denied or Error:', err)
-        setGpsStatus(err.code === 1 ? 'denied' : 'error')
-        setUseGps(false)
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    )
-  }, [])
-
-  useEffect(() => {
-    requestGPS()
-  }, [requestGPS])
+    refreshLocation({ highAccuracy: true })
+  }, [refreshLocation])
 
   useEffect(() => {
     if (showJurisdictions && !jurisdictionsData) {

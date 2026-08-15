@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   MapPin, AlertTriangle, CheckCircle, Upload, Loader2, Sparkles, 
-  LightbulbOff, Zap, Car, Trash2, Droplets, ShieldAlert, Waves, Construction, Camera, X
+  LightbulbOff, Zap, Car, Trash2, Droplets, ShieldAlert, Waves, Construction, Camera, X, ImageIcon
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap, Tooltip, Circle } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
@@ -11,6 +11,8 @@ import 'leaflet/dist/leaflet.css';
 import { geminiService } from '../../services/geminiService';
 import { hazardService } from '../../services/hazardService';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLocationState } from '../../contexts/LocationContext';
+import { optimizeImage } from '../../utils/imageOptimizer';
 
 // Fix Leaflet icons
 delete L.Icon.Default.prototype._getIconUrl;
@@ -71,6 +73,7 @@ function LocationMarker({ position, setPosition, setAddress }) {
     <Marker 
       position={position} 
       draggable={true}
+      icon={reportIcon}
       eventHandlers={{
         dragend: (e) => {
           const marker = e.target;
@@ -96,6 +99,7 @@ const reverseGeocode = async (lat, lng, setAddress) => {
 
 export default function ReportHazard() {
   const { user } = useAuth();
+  const { lat: userLat, lng: userLng, address: userAddress } = useLocationState();
   
   // Form State
   const [position, setPosition] = useState(null); // [lat, lng]
@@ -107,8 +111,10 @@ export default function ReportHazard() {
   const [photo, setPhoto] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
   
-  // AI State
+  // Image & AI State
+  const [isOptimizingImage, setIsOptimizingImage] = useState(false);
   const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
+  const [imageError, setImageError] = useState(null);
   const [isExpandingText, setIsExpandingText] = useState(false);
   const [aiConfidence, setAiConfidence] = useState(null);
 
@@ -138,15 +144,18 @@ export default function ReportHazard() {
   };
 
   useEffect(() => {
-    // 1. Get initial GPS
-    if (navigator.geolocation) {
+    // 1. Initialize location from context if available
+    if (userLat && userLng) {
+      setPosition([userLat, userLng]);
+      if (userAddress) setAddress(userAddress);
+      else reverseGeocode(userLat, userLng, setAddress);
+    } else if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           setPosition([pos.coords.latitude, pos.coords.longitude]);
           reverseGeocode(pos.coords.latitude, pos.coords.longitude, setAddress);
         },
         () => {
-          // Fallback Bengaluru
           setPosition([12.9716, 77.5946]);
           setAddress('Bengaluru, Karnataka');
         },
@@ -154,6 +163,7 @@ export default function ReportHazard() {
       );
     } else {
       setPosition([12.9716, 77.5946]);
+      setAddress('Bengaluru, Karnataka');
     }
 
     // 2. Fetch existing reports & stats
@@ -161,12 +171,8 @@ export default function ReportHazard() {
     fetchStats();
 
     // 3. Subscribe to real-time reports
-    // hazardService.subscribeToReports now passes (eventType, newRow, oldRow)
-    // so we can add the actual row to state rather than the raw Supabase payload envelope.
     const unsub = hazardService.subscribeToReports((eventType, newRow) => {
       if (eventType === 'INSERT' && newRow && newRow.id) {
-        // Normalise coordinate field names: the realtime event returns the raw
-        // table columns (latitude/longitude), not the view aliases (lat/lng).
         const normalisedRow = {
           ...newRow,
           lat: newRow.lat ?? newRow.latitude,
@@ -174,47 +180,66 @@ export default function ReportHazard() {
         };
         setCommunityReports(prev => [normalisedRow, ...prev]);
       }
-      // Refresh stats on any change event (INSERT/UPDATE/DELETE)
       fetchStats();
     });
 
     return () => unsub();
-  }, []);
+  }, [userLat, userLng, userAddress]);
 
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0];
     if (!file) return;
 
-    setPhoto(file);
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      const base64String = reader.result;
-      setPhotoPreview(base64String);
-      
-      // Analyze with Gemini
+    setImageError(null);
+    setIsOptimizingImage(true);
+    setIsAnalyzingImage(false);
+    setAiConfidence(null);
+
+    try {
+      // Step 1: Client-side validation, resize & compression
+      const optimized = await optimizeImage(file, {
+        maxWidth: 1280,
+        maxHeight: 1280,
+        quality: 0.8
+      });
+
+      // Save optimized File object for Supabase Storage
+      setPhoto(optimized.file);
+      setPhotoPreview(optimized.dataUrl);
+      setIsOptimizingImage(false);
+
+      // Step 2: Send optimized base64 to Gemini Vision API
       setIsAnalyzingImage(true);
-      setAiConfidence(null);
-      const b64Data = base64String.split(',')[1];
-      
       try {
-        const analysis = await geminiService.analyzeHazardImage(b64Data, file.type);
-        if (analysis.category && CATEGORIES.find(c => c.id.toLowerCase() === analysis.category.toLowerCase())) {
-           setCategory(CATEGORIES.find(c => c.id.toLowerCase() === analysis.category.toLowerCase()).id);
-        } else if (analysis.category) {
-           setCategory(analysis.category);
+        const analysis = await geminiService.analyzeHazardImage(optimized.base64, optimized.mimeType);
+        if (analysis?.category) {
+          const matchedCategory = CATEGORIES.find(c => c.id.toLowerCase() === analysis.category.toLowerCase());
+          if (matchedCategory) {
+            setCategory(matchedCategory.id);
+          } else {
+            setCategory(analysis.category);
+          }
         }
-        if (analysis.priority && PRIORITIES.find(p => p.id === analysis.priority.toLowerCase())) {
-           setPriority(analysis.priority.toLowerCase());
+        if (analysis?.priority) {
+          const matchedPriority = PRIORITIES.find(p => p.id === analysis.priority.toLowerCase());
+          if (matchedPriority) {
+            setPriority(matchedPriority.id);
+          }
         }
-        setAiConfidence(analysis.confidenceScore || 85);
-      } catch (err) {
-        console.error("AI Analysis failed", err);
+        setAiConfidence(analysis?.confidenceScore || 85);
+      } catch (aiErr) {
+        console.warn('[ReportHazard] AI Vision classification skipped/failed:', aiErr);
+        // AI analysis failure does not block the citizen from submitting
       } finally {
         setIsAnalyzingImage(false);
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('[ReportHazard] Image optimization error:', err);
+      setIsOptimizingImage(false);
+      setIsAnalyzingImage(false);
+      setImageError(err.message || 'Failed to process image. Please choose another file.');
+    }
   };
 
   const handleAIExpand = async () => {
@@ -227,7 +252,21 @@ export default function ReportHazard() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!position) return;
+    if (isSubmitting) return;
+
+    if (!position || isNaN(parseFloat(position[0])) || isNaN(parseFloat(position[1]))) {
+      setSubmitError('Please select or pin a valid location on the map.');
+      return;
+    }
+
+    const lat = parseFloat(position[0]);
+    const lng = parseFloat(position[1]);
+
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      setSubmitError('Coordinates are outside valid geographic range.');
+      return;
+    }
+
     setSubmitError(null);
     
     if (!user) {
@@ -238,110 +277,76 @@ export default function ReportHazard() {
     setIsSubmitting(true);
 
     try {
-      // ── DIAGNOSTIC STEP 1: Verify live session ──────────────────────────────
-      if (import.meta.env.DEV) {
-        console.group('[ReportHazard] Submission start');
-        console.log('Auth user ID:', user.id);
-        console.log('Auth user email:', user.email);
-        console.log('Position:', position);
-        console.log('Category:', category);
-        console.log('Priority:', priority);
-        console.log('Is anonymous:', isAnonymous);
-        console.log('Has photo:', !!photo);
-      }
-
-      // ── DIAGNOSTIC STEP 2: Photo upload ─────────────────────────────────────
+      // Step 1: Upload optimized photo if present
       let photoUrl = null;
       if (photo) {
-        if (import.meta.env.DEV) console.log('[ReportHazard] Starting photo upload to hazards bucket...');
-        photoUrl = await hazardService.uploadPhoto(photo, user.id);
-        if (!photoUrl) {
-          console.warn('[ReportHazard] Photo upload failed — submitting without photo.');
-        } else {
-          if (import.meta.env.DEV) console.log('[ReportHazard] Photo uploaded OK:', photoUrl);
+        try {
+          photoUrl = await hazardService.uploadPhoto(photo, user.id);
+          if (!photoUrl) {
+            console.warn('[ReportHazard] Photo upload failed — proceeding without photo URL.');
+          }
+        } catch (uploadErr) {
+          console.warn('[ReportHazard] Photo storage error:', uploadErr);
         }
       }
 
-      // Calculate simple impact score
+      // Step 2: Determine impact score
       let impactScore = 'Low';
-      if (priority === 'high' || priority === 'critical') impactScore = 'High';
-      else if (priority === 'medium') impactScore = 'Medium';
+      const pLower = (priority || '').toLowerCase();
+      if (pLower === 'high' || pLower === 'critical') impactScore = 'High';
+      else if (pLower === 'medium') impactScore = 'Medium';
 
-      // ── DIAGNOSTIC STEP 3: Build payload ────────────────────────────────────
+      const formattedPriority = pLower.charAt(0).toUpperCase() + pLower.slice(1);
+
+      // Step 3: Build normalized payload matching PostgreSQL schema
       const reportData = {
-        // IMPORTANT: Always send the authenticated user's UUID.
-        // Anonymous reports use is_anonymous=true to hide identity publicly.
-        // Setting user_id=null violates RLS (auth.uid() = user_id fails).
         user_id: user.id,
-        title: `${category} Report`,
-        category,
-        priority: priority.charAt(0).toUpperCase() + priority.slice(1),
-        latitude: position[0],
-        longitude: position[1],
-        address,
+        title: `${category || 'Hazard'} Report`,
+        category: category || 'Other',
+        priority: formattedPriority,
+        latitude: lat,
+        longitude: lng,
+        address: (address || 'Bengaluru, Karnataka').trim(),
         city: 'Bengaluru',
-        description,
-        photo_url: photoUrl,
+        description: (description || '').trim() || null,
+        photo_url: photoUrl || null,
         severity: impactScore,
-        is_anonymous: isAnonymous
-        // created_at intentionally omitted — use database default (NOW())
+        is_anonymous: Boolean(isAnonymous)
       };
 
       if (import.meta.env.DEV) {
-        console.log('[ReportHazard] INSERT payload:', {
-          ...reportData,
-          // Confirm user_id is a UUID, not null/email
-          user_id_type: typeof reportData.user_id,
-          user_id_matches_auth: reportData.user_id === user.id
-        });
+        console.log('[ReportHazard] Submitting validated report:', reportData);
       }
 
-      // ── DIAGNOSTIC STEP 4: Submit ────────────────────────────────────────────
+      // Step 4: Insert into Supabase incident_reports
       const res = await hazardService.submitReport(reportData);
-
-      if (import.meta.env.DEV) {
-        console.log('[ReportHazard] submitReport result:', res);
-        console.groupEnd();
-      }
 
       if (res.success) {
         setReportId(res.id);
         setSubmitError(null);
         setSubmitted(true);
+        fetchStats();
       } else {
         const code = res.code || '';
         const msg = (res.error || '').toLowerCase();
-        const hint = (res.details || '').toLowerCase();
 
         if (code === 'SESSION_EXPIRED') {
           setSubmitError('Your session has expired. Please sign in again to submit reports.');
         } else if (code === '42501' || msg.includes('permission denied')) {
-          // 42501 = insufficient_privilege in PostgreSQL.
-          // This is most commonly caused by:
-          //   • Missing GRANT INSERT on incident_reports to authenticated
-          //   • A trigger trying to INSERT into incident_updates without SECURITY DEFINER
-          // The 1006 migration fixes both. Do NOT tell users to sign out — that won't help.
           setSubmitError(
             'Your account is authenticated but the database rejected the report. ' +
-            'This is a server configuration issue. Please contact support if this persists.'
+            'Please verify database permissions and migrations.'
           );
         } else if (msg.includes('null value in column') || msg.includes('violates not-null constraint')) {
-          const match = res.error.match(/column "([^"]+)"/);
-          setSubmitError(`Missing required field: ${match ? match[1] : 'unknown'}. Please fill all required fields.`);
+          setSubmitError(`Missing required field: ${res.details || res.error}. Please fill all required fields.`);
         } else if (msg.includes('foreign key') || msg.includes('violates foreign key')) {
-          setSubmitError('Your account profile could not be found. Please contact support.');
-        } else if (msg.includes('network') || msg.includes('fetch')) {
-          setSubmitError('Network error. Please check your connection and try again.');
+          setSubmitError('Your account profile could not be verified. Please contact support.');
         } else {
-          setSubmitError('Unable to submit hazard report. Your report could not be saved. Please try again.');
+          setSubmitError(res.error || 'Unable to submit hazard report. Please try again.');
         }
-        // NOTE: Form state is intentionally NOT reset on failure so the user can retry.
       }
     } catch (err) {
-      if (import.meta.env.DEV) {
-        console.error('[ReportHazard] Unexpected error:', err);
-        console.groupEnd();
-      }
+      console.error('[ReportHazard] Unexpected error:', err);
       setSubmitError('An unexpected error occurred. Please try again.');
     } finally {
       setIsSubmitting(false);
@@ -490,28 +495,55 @@ export default function ReportHazard() {
               
               {!photoPreview ? (
                 <label className="w-full h-32 border-2 border-dashed border-white/10 hover:border-brand-blue/50 hover:bg-white/5 rounded-xl flex flex-col items-center justify-center text-gray-500 cursor-pointer transition-colors relative">
-                  <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-                  {isAnalyzingImage ? (
+                  <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleImageUpload} disabled={isOptimizingImage || isAnalyzingImage} />
+                  {isOptimizingImage ? (
                     <>
                       <Loader2 className="w-6 h-6 animate-spin text-brand-blue mb-2" />
-                      <span className="text-xs font-bold text-brand-blue">Gemini Vision Analyzing...</span>
+                      <span className="text-xs font-bold text-brand-blue">Preparing image...</span>
+                      <span className="text-[10px] text-gray-400">Compressing & optimizing resolution</span>
+                    </>
+                  ) : isAnalyzingImage ? (
+                    <>
+                      <Loader2 className="w-6 h-6 animate-spin text-brand-neonGreen mb-2" />
+                      <span className="text-xs font-bold text-brand-neonGreen">Analyzing image with AI...</span>
+                      <span className="text-[10px] text-gray-400">Classifying hazard & priority</span>
                     </>
                   ) : (
                     <>
-                      <Camera className="w-6 h-6 mb-2" />
-                      <span className="text-xs font-bold">Tap to upload or take photo</span>
+                      <Camera className="w-6 h-6 mb-2 text-gray-400" />
+                      <span className="text-xs font-bold text-gray-300">Tap to upload or take photo</span>
+                      <span className="text-[10px] text-gray-500">Auto-compressed • JPG, PNG, WebP</span>
                     </>
                   )}
                 </label>
               ) : (
-                <div className="relative h-32 w-full rounded-xl overflow-hidden group">
+                <div className="relative h-36 w-full rounded-xl overflow-hidden group border border-white/10">
                   <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button type="button" onClick={() => { setPhoto(null); setPhotoPreview(null); setAiConfidence(null); }} className="bg-red-500/80 p-2 rounded-full text-white">
-                      <X className="w-5 h-5" />
+                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="text-xs text-white/80 font-mono">Optimized for upload</span>
+                    <button 
+                      type="button" 
+                      onClick={() => { setPhoto(null); setPhotoPreview(null); setAiConfidence(null); setImageError(null); }} 
+                      className="bg-red-500/90 hover:bg-red-600 p-2 rounded-full text-white shadow-lg transition-colors"
+                      title="Remove image"
+                    >
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
+                  {isAnalyzingImage && (
+                    <div className="absolute bottom-2 left-2 right-2 bg-black/80 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-blue" />
+                      <span className="text-[11px] text-brand-blue font-mono">Analyzing with Gemini Vision...</span>
+                    </div>
+                  )}
                 </div>
+              )}
+
+              {imageError && (
+                <p className="text-xs text-red-400 mt-2 font-mono flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  {imageError}
+                </p>
               )}
             </div>
 

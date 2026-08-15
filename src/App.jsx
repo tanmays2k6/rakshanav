@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { AIProvider } from './contexts/AIContext';
+import { LocationProvider } from './contexts/LocationContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import { useAuth } from './contexts/AuthContext';
 
@@ -74,8 +75,9 @@ export default function App() {
   return (
     <AuthProvider>
       <AIProvider>
-        <BrowserRouter>
-          <Routes>
+        <LocationProvider>
+          <BrowserRouter>
+            <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
@@ -190,11 +192,11 @@ export default function App() {
           </Route>
 
           {/* Default Redirect & 404 */}
-          <Route path="/" element={<RootRedirect />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-        </BrowserRouter>
-
+            <Route path="/" element={<RootRedirect />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+          </BrowserRouter>
+        </LocationProvider>
       </AIProvider>
     </AuthProvider>
   );

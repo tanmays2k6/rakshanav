@@ -3,13 +3,18 @@
 -- 1. Audit Logs Table
 CREATE TABLE IF NOT EXISTS public.audit_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    admin_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    admin_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     action TEXT NOT NULL,
     resource_type TEXT NOT NULL,
     resource_id TEXT,
     metadata JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS admin_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS resource_type TEXT;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS resource_id TEXT;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
 
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 

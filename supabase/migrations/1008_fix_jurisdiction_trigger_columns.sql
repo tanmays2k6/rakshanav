@@ -1,22 +1,17 @@
--- Add jurisdiction_id to incident_reports
-ALTER TABLE public.incident_reports 
-ADD COLUMN IF NOT EXISTS jurisdiction_id UUID REFERENCES public.police_jurisdictions(id) ON DELETE SET NULL;
+-- =============================================================================
+-- 1008_fix_jurisdiction_trigger_columns.sql
+-- Fix column names in auto_assign_jurisdiction trigger (use latitude/longitude).
+-- =============================================================================
 
--- Create an index for faster filtering by jurisdiction
-CREATE INDEX IF NOT EXISTS idx_incident_reports_jurisdiction_id ON public.incident_reports(jurisdiction_id);
-
--- Create a trigger function to automatically set jurisdiction_id based on latitude/longitude using PostGIS
 CREATE OR REPLACE FUNCTION public.auto_assign_jurisdiction()
 RETURNS TRIGGER AS $$
 DECLARE
   v_lat DOUBLE PRECISION;
   v_lng DOUBLE PRECISION;
 BEGIN
-  -- Safely extract latitude and longitude from the incoming record
   v_lat := NEW.latitude;
   v_lng := NEW.longitude;
 
-  -- If coordinates are provided and valid, find the intersecting police jurisdiction
   IF v_lat IS NOT NULL AND v_lng IS NOT NULL THEN
     BEGIN
       NEW.jurisdiction_id := (
@@ -26,7 +21,6 @@ BEGIN
         LIMIT 1
       );
     EXCEPTION WHEN OTHERS THEN
-      -- If PostGIS lookup fails or table is empty, do not abort insertion
       NEW.jurisdiction_id := NULL;
     END;
   END IF;
@@ -36,11 +30,8 @@ $$ LANGUAGE plpgsql
    SECURITY DEFINER
    SET search_path = public;
 
--- Attach the trigger to incident_reports before insert
 DROP TRIGGER IF EXISTS trigger_assign_jurisdiction ON public.incident_reports;
 CREATE TRIGGER trigger_assign_jurisdiction
 BEFORE INSERT ON public.incident_reports
 FOR EACH ROW
 EXECUTE FUNCTION public.auto_assign_jurisdiction();
-
-
