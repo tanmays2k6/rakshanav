@@ -344,12 +344,6 @@ export default function CitizenDashboard() {
                     {loading ? 'Acquiring Signal...' : 'Live Safety Map'}
                   </span>
                 </div>
-                <div className={`hidden lg:block w-px h-4 ${isDarkMode ? 'bg-[rgba(255,255,255,0.15)]' : 'bg-[#E2E6EC]'} mx-1`} />
-                <div className="flex gap-1.5 overflow-x-auto custom-scrollbar pb-1 lg:pb-0">
-                  <MapToggle isDarkMode={isDarkMode} active={showCommunity} onClick={() => setShowCommunity(!showCommunity)} label="Hazards" />
-                  <MapToggle isDarkMode={isDarkMode} active={showJurisdictions} onClick={() => setShowJurisdictions(!showJurisdictions)} label="Police Zones" />
-                  <MapToggle isDarkMode={isDarkMode} active={showTraffic} onClick={() => setShowTraffic(!showTraffic)} label="Traffic" />
-                </div>
               </div>
             </div>
             
