@@ -5,8 +5,20 @@ exports.chat = async (req, res, next) => {
     const { history = [], message, context = {} } = req.body;
     
     // 1. Validation
-    if (!message) {
-      const err = new Error('The "message" field is required in the request body.');
+    if (!message || typeof message !== 'string' || !message.trim()) {
+      const err = new Error('The "message" string is required in the request body.');
+      err.status = 400;
+      throw err;
+    }
+
+    if (message.length > 2000) {
+      const err = new Error('Message length exceeds maximum allowable limit of 2,000 characters.');
+      err.status = 400;
+      throw err;
+    }
+
+    if (!Array.isArray(history) || history.length > 50) {
+      const err = new Error('Invalid or oversized history array.');
       err.status = 400;
       throw err;
     }
@@ -71,7 +83,7 @@ exports.generateRecommendation = async (req, res, next) => {
 
 exports.classifyHazard = async (req, res, next) => {
   try {
-    const description = req.body.description || 'Unknown hazard';
+    const description = (req.body.description || 'Unknown hazard').toString().slice(0, 1000);
     console.log(`[AI Controller] Classifying hazard: "${description}"`);
     const classification = await geminiService.classifyHazardTextFallback(description);
     res.json({ success: true, classification });
@@ -82,10 +94,22 @@ exports.classifyHazard = async (req, res, next) => {
 
 exports.analyzeHazardImage = async (req, res, next) => {
   try {
-    const { imageBase64, mimeType } = req.body;
-    if (!imageBase64) {
-      return res.status(400).json({ success: false, error: 'imageBase64 is required' });
+    const { imageBase64, mimeType = 'image/jpeg' } = req.body;
+    if (!imageBase64 || typeof imageBase64 !== 'string') {
+      return res.status(400).json({ success: false, error: 'imageBase64 string is required' });
     }
+
+    // MIME type whitelist
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
+    if (!allowedMimes.includes(mimeType.toLowerCase())) {
+      return res.status(400).json({ success: false, error: 'Invalid image format. Allowed formats: JPEG, PNG, WebP, HEIC.' });
+    }
+
+    // Limit base64 length (~7MB raw file max)
+    if (imageBase64.length > 10 * 1024 * 1024) {
+      return res.status(400).json({ success: false, error: 'Image payload exceeds maximum limit of 7MB.' });
+    }
+
     console.log(`[AI Controller] Analyzing hazard image (Base64)...`);
     const classification = await geminiService.analyzeHazardImage(imageBase64, mimeType);
     res.json({ success: true, classification });
@@ -97,11 +121,12 @@ exports.analyzeHazardImage = async (req, res, next) => {
 exports.expandHazardDescription = async (req, res, next) => {
   try {
     const { description } = req.body;
-    if (!description) {
-      return res.status(400).json({ success: false, error: 'description is required' });
+    if (!description || typeof description !== 'string' || !description.trim()) {
+      return res.status(400).json({ success: false, error: 'description string is required' });
     }
+    const safeDesc = description.slice(0, 1000);
     console.log(`[AI Controller] Expanding hazard description...`);
-    const expanded = await geminiService.expandHazardDescription(description);
+    const expanded = await geminiService.expandHazardDescription(safeDesc);
     res.json({ success: true, expanded });
   } catch (error) {
     next(error);

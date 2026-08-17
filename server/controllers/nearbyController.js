@@ -22,7 +22,17 @@ exports.getNearbyHavens = async (req, res, next) => {
 
     const numericLat = parseFloat(lat);
     const numericLng = parseFloat(lng);
-    const numericRadius = parseFloat(radius);
+    let numericRadius = parseFloat(radius);
+
+    if (isNaN(numericLat) || isNaN(numericLng) || isNaN(numericRadius)) {
+      const err = new Error('Coordinates and radius must be valid numbers.');
+      err.status = 400;
+      throw err;
+    }
+
+    // Security check: Cap search radius at 15km (15,000m) to prevent DoS on Overpass API
+    if (numericRadius < 100) numericRadius = 100;
+    if (numericRadius > 15000) numericRadius = 15000;
 
     console.log(`[Nearby Controller] Fetching Safe Havens within ${numericRadius}m of ${numericLat}, ${numericLng}`);
 

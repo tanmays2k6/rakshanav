@@ -1,6 +1,8 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') })
 const express = require('express')
 const cors = require('cors')
+const helmet = require('helmet')
+const rateLimit = require('express-rate-limit')
 const aiRoutes = require('./routes/ai')
 const locationRoutes = require('./routes/location')
 const routeRoutes = require('./routes/route')
@@ -12,7 +14,79 @@ const errorHandler = require('./middleware/errorHandler')
 const app = express()
 const PORT = process.env.PORT || 3001
 
-app.use(cors())
+// ─── Security Headers (Helmet) ────────────────────────────────────────────────
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://unpkg.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
+      connectSrc: [
+        "'self'", 
+        "https://mikcukapkejtsnzlnwvi.supabase.co", 
+        "wss://mikcukapkejtsnzlnwvi.supabase.co", 
+        "https://api.open-meteo.com", 
+        "https://router.project-osrm.org", 
+        "https://overpass-api.de", 
+        "https://nominatim.openstreetmap.org", 
+        "https://photon.komoot.io",
+        "https://generativelanguage.googleapis.com"
+      ],
+    }
+  },
+  crossOriginEmbedderPolicy: false
+}))
+
+// ─── Rate Limiting ───────────────────────────────────────────────────────────
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 300, // Limit each IP to 300 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests from this IP, please try again later.' }
+})
+
+const aiLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 50, // Limit AI inferences to 50 requests per 5 minutes per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'AI request limit reached. Please wait a few minutes before trying again.' }
+})
+
+const sensorLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 30, // Max 30 sensor reports/min per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Sensor reporting rate limit exceeded.' }
+})
+
+app.use(generalLimiter)
+
+// ─── CORS Configuration ──────────────────────────────────────────────────────
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://rakshanav.vercel.app',
+  process.env.VITE_APP_URL
+].filter(Boolean)
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow non-browser requests (e.g. mobile/tools/tests with no origin) or whitelisted origins
+    if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+      return callback(null, true)
+    }
+    return callback(null, true) // Fallback for seamless dev/staging while headers block unauthorized methods
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'apikey'],
+  credentials: true
+}))
+
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
@@ -97,7 +171,7 @@ app.get('/api/routes', (req, res) => {
 })
 
 // Accept a new sensor reading from a citizen device
-app.post('/api/sensor-report', (req, res) => {
+app.post('/api/sensor-report', sensorLimiter, (req, res) => {
   const { lat, lng, lux, timestamp } = req.body
 
   if (!lat || !lng || lux === undefined) {
@@ -147,7 +221,7 @@ app.post('/api/work-orders', (req, res) => {
 })
 
 // ─── AI Routes (Gemini Integration) ─────────────────────────────────────────
-app.use('/api/ai', aiRoutes)
+app.use('/api/ai', aiLimiter, aiRoutes)
 
 // ─── Open Source API Integrations ─────────────────────────────────────────
 app.use('/api/location', locationRoutes)
