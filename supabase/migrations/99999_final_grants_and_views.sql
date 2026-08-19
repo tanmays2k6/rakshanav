@@ -7,7 +7,8 @@ ALTER TABLE public.incident_reports ADD COLUMN IF NOT EXISTS is_anonymous BOOLEA
 
 -- 2. Ensure public_incident_view exists
 DROP VIEW IF EXISTS public.public_incident_view;
-CREATE VIEW public.public_incident_view AS
+CREATE VIEW public.public_incident_view
+WITH (security_invoker = true) AS
 SELECT 
     id,
     category,
